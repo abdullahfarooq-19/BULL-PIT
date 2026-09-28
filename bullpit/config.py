@@ -48,6 +48,11 @@ class Settings(BaseSettings):
 
     # --- SEC EDGAR -----------------------------------------------------
     sec_contact_email: str | None = None
+    sec_max_requests_per_second: float = 10.0
+
+    # --- Data layer -------------------------------------------------------
+    data_cache_dir: Path = Path("data_cache")
+    news_lookback_days: int = 7
 
     # --- Logging ------------------------------------------------------------
     log_level: str = "INFO"
