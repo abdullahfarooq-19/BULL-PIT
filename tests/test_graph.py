@@ -1,5 +1,6 @@
 """The graph end to end, with recorded fixtures, a fake broker and a fake
-completion function (M3-AC-1 automated, AC-5, AC-6, AC-7, AC-9).
+completion function (M3-AC-1 automated, AC-5, AC-6, AC-7, AC-9; M4-AC-4,
+AC-6, AC-8, AC-12).
 """
 
 from __future__ import annotations
@@ -7,6 +8,7 @@ from __future__ import annotations
 import json
 import re
 import threading
+from collections import defaultdict, deque
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
@@ -18,15 +20,54 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from bullpit.clock import SimClock
 from bullpit.config import Settings
-from bullpit.domain import Account, Asset
+from bullpit.domain import Account, Asset, Position
 from bullpit.errors import LLMUnavailable, QuotaExhausted
-from bullpit.journal.models import LLMCall, Request, SignalRecord
+from bullpit.journal.models import (
+    DebateTurnRecord,
+    LLMCall,
+    RecommendationRecord,
+    Request,
+    SignalRecord,
+)
 from bullpit.llm.gateway import CompletionReply, CompletionRequest
 from bullpit.runners.request import run_request
+from tests.agents.conftest import (
+    FIRST_LINE_BEAR,
+    FIRST_LINE_BULL,
+    FIRST_LINE_RISK_REVIEW,
+    FIRST_LINE_TRADER,
+)
 from tests.broker.fake_broker import FakeBroker
 from tests.conftest import fixture_path
 
 AS_OF = date(2024, 7, 5)
+
+_DEFAULT_DEBATE_REPLY = json.dumps(
+    {
+        "points": [{"claim": "The trend supports buying.", "evidence_ids": ["T1"]}],
+        "concessions": [],
+        "conviction": 0.6,
+    }
+)
+_DEFAULT_TRADER_REPLY = json.dumps(
+    {
+        "action": "buy",
+        "target_weight": 0.06,
+        "exit_style": "normal",
+        "confidence": 0.6,
+        "decisive_evidence": ["T1"],
+        "reasoning": "Trend and margins outweigh the news risk.",
+    }
+)
+_DEFAULT_REVIEW_REPLY = json.dumps({"decision": "approve", "reason": "Sizing looks sound."})
+
+
+@pytest.fixture
+def settings(settings: Settings) -> Settings:
+    """A debated request makes up to 10 large-model calls in one test (M4
+    NFR-3); raise the per-minute pacing so the real token bucket never
+    sleeps through them (plan sec13, test-only override, no code change)."""
+    return settings.model_copy(update={"llm_tpm_limit": 1_000_000, "llm_rpm_limit": 1_000})
 
 
 def _company_tickers() -> dict[str, Any]:
@@ -79,8 +120,13 @@ def _patch_news() -> Any:
 
 
 class RecordingLLM:
-    """Answers by template, since the three analysts call in parallel and
-    arrive in any order (plan sec13); records every rendered prompt."""
+    """Answers by which fixed first line the prompt starts with, since the
+    three analysts call in parallel and arrive in any order (plan sec13);
+    records every rendered prompt. The three M3 analyst replies are fixed
+    per instance; the four M4 templates can be scripted per test with
+    `queue()` (consumed first, in order) and otherwise fall back to a
+    sensible default (bullish debate point, a 6% normal buy, an approve).
+    """
 
     def __init__(
         self,
@@ -89,18 +135,32 @@ class RecordingLLM:
         fundamentals: tuple[str, float] = ("neutral", 0.4),
         sentiment_score: float = 0.6,
         sentiment_relevance: float = 0.9,
+        trader_reply: str = _DEFAULT_TRADER_REPLY,
+        review_reply: str = _DEFAULT_REVIEW_REPLY,
     ) -> None:
         self.technical = technical
         self.fundamentals = fundamentals
         self.sentiment_score = sentiment_score
         self.sentiment_relevance = sentiment_relevance
+        self.trader_reply = trader_reply
+        self.review_reply = review_reply
         self.prompts: list[str] = []
         self._lock = threading.Lock()
+        self._queues: dict[str, deque[str]] = defaultdict(deque)
+
+    def queue(self, first_line: str, content: str) -> None:
+        self._queues[first_line].append(content)
 
     def __call__(self, request: CompletionRequest) -> CompletionReply:
         prompt = request.messages[0]["content"]
         with self._lock:
             self.prompts.append(prompt)
+
+        for first_line, queue in self._queues.items():
+            if prompt.startswith(first_line) and queue:
+                return CompletionReply(
+                    content=queue.popleft(), input_tokens=50, output_tokens=10, reasoning_tokens=5
+                )
 
         if prompt.startswith("You are a news sentiment analyst"):
             ids = re.findall(r"^(S\d+):", prompt, re.MULTILINE)
@@ -119,6 +179,12 @@ class RecordingLLM:
         elif prompt.startswith("You are a fundamentals analyst"):
             direction, confidence = self.fundamentals
             content = json.dumps({"direction": direction, "confidence": confidence})
+        elif prompt.startswith(FIRST_LINE_BULL) or prompt.startswith(FIRST_LINE_BEAR):
+            content = _DEFAULT_DEBATE_REPLY
+        elif prompt.startswith(FIRST_LINE_TRADER):
+            content = self.trader_reply
+        elif prompt.startswith(FIRST_LINE_RISK_REVIEW):
+            content = self.review_reply
         else:
             raise AssertionError(f"unrecognised prompt: {prompt[:80]!r}")
 
@@ -127,10 +193,11 @@ class RecordingLLM:
         )
 
 
-def _fake_broker(settings: Settings) -> FakeBroker:
+def _fake_broker(settings: Settings, *, positions: dict[str, Position] | None = None) -> FakeBroker:
     return FakeBroker(
         account=Account(cash=Decimal("100000"), equity=Decimal("100000")),
         assets={"AAPL": Asset(symbol="AAPL", name="Apple Inc.", tradable=True, active=True)},
+        positions=positions or {},
     )
 
 
@@ -144,11 +211,44 @@ def _signal_rows(sessions: sessionmaker[Session], request_id: str) -> list[Signa
         return list(session.query(SignalRecord).filter(SignalRecord.request_id == request_id).all())
 
 
+def _debate_turn_rows(sessions: sessionmaker[Session], request_id: str) -> list[DebateTurnRecord]:
+    with sessions() as session:
+        return list(
+            session.query(DebateTurnRecord)
+            .filter(DebateTurnRecord.request_id == request_id)
+            .order_by(DebateTurnRecord.id)
+            .all()
+        )
+
+
+def _recommendation_rows(
+    sessions: sessionmaker[Session], request_id: str
+) -> list[RecommendationRecord]:
+    with sessions() as session:
+        return list(
+            session.query(RecommendationRecord)
+            .filter(RecommendationRecord.request_id == request_id)
+            .order_by(RecommendationRecord.id)
+            .all()
+        )
+
+
 class TestDebateRoute:
-    def test_conflicting_signals_route_to_debate(
-        self, settings: Settings, sessions: sessionmaker[Session]
-    ) -> None:
+    def test_buy_path(self, settings: Settings, sessions: sessionmaker[Session]) -> None:
+        """M3's debate-route test, extended (M4-AC-4, AC-8): the bull's
+        round-1 reply cites the unregistered T99, and the request runs all
+        the way through to a buy."""
         llm = RecordingLLM(technical=("bullish", 0.6), fundamentals=("neutral", 0.4))
+        llm.queue(
+            FIRST_LINE_BULL,
+            json.dumps(
+                {
+                    "points": [{"claim": "Momentum is strong.", "evidence_ids": ["T99"]}],
+                    "concessions": [],
+                    "conviction": 0.6,
+                }
+            ),
+        )
         with _patch_sec(), _patch_prices(), _patch_news():
             result = run_request(
                 "AAPL",
@@ -190,18 +290,40 @@ class TestDebateRoute:
                 assert item.id.startswith(prefix)
                 assert item.id in result.board.evidence
 
-        rows = _llm_calls(sessions, result.request_id)
-        assert len(rows) == 3
-        assert {row.role for row in rows} == {"small"}
-
         signal_rows = _signal_rows(sessions, result.request_id)
         assert {row.analyst for row in signal_rows} == {"technical", "fundamentals", "sentiment"}
+
+        # M4: the debate ran, the T99 citation is unsupported, and the
+        # request ends in a buy sized from the fixture's own close and ATR.
+        assert len(result.debate) == 4
+        first_bull_turn = result.debate[0]
+        assert first_bull_turn.side == "bull"
+        assert first_bull_turn.points[0].evidence_ids == ["T99"]
+        assert first_bull_turn.points[0].unsupported is True
+
+        assert result.outcome == "buy"
+        assert result.sized_order is not None
+        assert result.prices is not None
+        assert result.sized_order.reference_price == result.prices.reference_price
+        assert result.sized_order.exit_style == "normal"
+        assert result.sized_order.shares > 0
+
+        turn_rows = _debate_turn_rows(sessions, result.request_id)
+        assert len(turn_rows) == 4
+        assert turn_rows[0].side == "bull"
+        assert turn_rows[0].round == 1
+        assert turn_rows[0].unsupported_count == 1
+
+        recommendation_rows = _recommendation_rows(sessions, result.request_id)
+        assert len(recommendation_rows) == 1
+        assert recommendation_rows[0].final_order is not None
 
         with sessions() as session:
             journal_row = session.get(Request, result.request_id)
             assert journal_row is not None
             assert journal_row.status == "completed"
             assert journal_row.route == "debate"
+            assert journal_row.outcome == "buy"
 
 
 class TestWeakSignalsRouteToNoTrade:
@@ -226,8 +348,173 @@ class TestWeakSignalsRouteToNoTrade:
             )
 
         assert result.route == "no_trade"
+        assert result.outcome == "no_trade"
+        assert result.no_trade_reason is not None
+        assert result.no_trade_reason.startswith("Signals too weak for a debate")
+        assert result.debate == []
+        assert result.attempts == []
+
         rows = _llm_calls(sessions, result.request_id)
-        assert len(rows) == 3
+        assert len(rows) == 3  # the three analysts only: no debate/trader/review calls
+
+        assert _debate_turn_rows(sessions, result.request_id) == []
+        assert _recommendation_rows(sessions, result.request_id) == []
+
+        with sessions() as session:
+            journal_row = session.get(Request, result.request_id)
+            assert journal_row is not None
+            assert journal_row.outcome == "no_trade"
+
+
+class TestVetoLimit:
+    def test_reviewer_always_vetoes_ends_in_no_trade(
+        self, settings: Settings, sessions: sessionmaker[Session]
+    ) -> None:
+        llm = RecordingLLM(
+            review_reply=json.dumps(
+                {"decision": "veto", "reason": "Size does not match the trader's confidence."}
+            )
+        )
+        with _patch_sec(), _patch_prices(), _patch_news():
+            result = run_request(
+                "AAPL",
+                "backtest",
+                SimClock(AS_OF),
+                settings=settings,
+                sessions=sessions,
+                broker=_fake_broker(settings),
+                completion_fn=llm,
+            )
+
+        assert result.outcome == "no_trade"
+        assert result.no_trade_reason is not None
+        assert result.no_trade_reason.startswith("Risk manager vetoed 3 times:")
+        assert len(result.attempts) == 3
+
+        # Each trader retry prompt is distinct (it lists the growing veto
+        # history, D-M4-6), so all three are real calls. The risk-review
+        # prompt doesn't vary between rounds here (same recommendation, same
+        # order each time), so its 2nd and 3rd calls are cache hits -- the
+        # verdict is still applied three times, which the recorded
+        # recommendation rows below confirm (M4-AC-6: "3 trader calls, 3
+        # reviews" counts risk_review_node's logical calls, not raw network
+        # calls).
+        trader_prompts = [p for p in llm.prompts if p.startswith(FIRST_LINE_TRADER)]
+        assert len(trader_prompts) == 3
+        assert "Veto 1:" in trader_prompts[1]
+        assert "Veto 1:" in trader_prompts[2]
+        assert "Veto 2:" in trader_prompts[2]
+
+        recommendation_rows = _recommendation_rows(sessions, result.request_id)
+        assert len(recommendation_rows) == 3
+        assert all(row.review_decision == "veto" for row in recommendation_rows)
+        assert all(row.final_order is None for row in recommendation_rows)
+
+
+class TestTraderNoTrade:
+    def test_no_trade_action_skips_the_risk_manager(
+        self, settings: Settings, sessions: sessionmaker[Session]
+    ) -> None:
+        llm = RecordingLLM(
+            trader_reply=json.dumps(
+                {
+                    "action": "no_trade",
+                    "target_weight": 0.0,
+                    "exit_style": "normal",
+                    "confidence": 0.4,
+                    "decisive_evidence": [],
+                    "reasoning": "Too much uncertainty this week.",
+                }
+            )
+        )
+        with _patch_sec(), _patch_prices(), _patch_news():
+            result = run_request(
+                "AAPL",
+                "backtest",
+                SimClock(AS_OF),
+                settings=settings,
+                sessions=sessions,
+                broker=_fake_broker(settings),
+                completion_fn=llm,
+            )
+
+        assert result.outcome == "no_trade"
+        assert (
+            result.no_trade_reason == "Trader recommended no trade: Too much uncertainty this week."
+        )
+        assert not any(p.startswith(FIRST_LINE_RISK_REVIEW) for p in llm.prompts)
+
+        recommendation_rows = _recommendation_rows(sessions, result.request_id)
+        assert len(recommendation_rows) == 1
+        assert recommendation_rows[0].sized_order is None
+        assert recommendation_rows[0].blocked_reason is None
+
+
+class TestStageABlock:
+    def test_existing_holding_at_the_cap_blocks_before_review(
+        self, settings: Settings, sessions: sessionmaker[Session]
+    ) -> None:
+        llm = RecordingLLM()
+        broker = _fake_broker(
+            settings,
+            positions={"AAPL": Position(symbol="AAPL", qty=10, market_value=Decimal("12000"))},
+        )
+        with _patch_sec(), _patch_prices(), _patch_news():
+            result = run_request(
+                "AAPL",
+                "backtest",
+                SimClock(AS_OF),
+                settings=settings,
+                sessions=sessions,
+                broker=broker,
+                completion_fn=llm,
+            )
+
+        assert result.outcome == "no_trade"
+        assert result.no_trade_reason is not None
+        assert result.no_trade_reason.startswith("Per-stock cap reached")
+        assert not any(p.startswith(FIRST_LINE_RISK_REVIEW) for p in llm.prompts)
+
+        recommendation_rows = _recommendation_rows(sessions, result.request_id)
+        assert len(recommendation_rows) == 1
+        assert recommendation_rows[0].blocked_reason is not None
+        assert recommendation_rows[0].blocked_reason.startswith("Per-stock cap reached")
+
+
+class TestFlaggedDebateTurn:
+    def test_bears_round_one_reply_invalid_twice_becomes_a_flagged_turn(
+        self, settings: Settings, sessions: sessionmaker[Session]
+    ) -> None:
+        llm = RecordingLLM()
+        llm.queue(FIRST_LINE_BEAR, "not json")
+        llm.queue(FIRST_LINE_BEAR, "still not json")  # the gateway's one retry
+
+        with _patch_sec(), _patch_prices(), _patch_news():
+            result = run_request(
+                "AAPL",
+                "backtest",
+                SimClock(AS_OF),
+                settings=settings,
+                sessions=sessions,
+                broker=_fake_broker(settings),
+                completion_fn=llm,
+            )
+
+        assert len(result.debate) == 4
+        bear_round_one = result.debate[1]
+        assert bear_round_one.side == "bear"
+        assert bear_round_one.round == 1
+        assert bear_round_one.flagged is True
+
+        with sessions() as session:
+            journal_row = session.get(Request, result.request_id)
+            assert journal_row is not None
+            assert journal_row.status == "completed"
+
+        turn_rows = _debate_turn_rows(sessions, result.request_id)
+        flagged_rows = [row for row in turn_rows if row.side == "bear" and row.round == 1]
+        assert len(flagged_rows) == 1
+        assert flagged_rows[0].flagged is True
 
 
 class TestFailedAnalyst:
@@ -308,6 +595,56 @@ class TestFailedAnalyst:
                 completion_fn=llm,
             )
         assert result.rejection is None
+
+
+class TestM4NodeException:
+    def test_trader_exception_fails_the_request_and_releases_the_lock(
+        self, settings: Settings, sessions: sessionmaker[Session]
+    ) -> None:
+        """M4-FR-15, AC-12: an exception past the brain (unlike an analyst
+        failure) fails the whole request loudly, with no partial outcome.
+        A later request for the same ticker isn't refused (lock released),
+        and that successful run's debate rows are recorded normally."""
+        llm = RecordingLLM()
+
+        def broken_trader(*args: object, **kwargs: object) -> dict[str, object]:
+            raise LLMUnavailable("forced failure for the test")
+
+        with (
+            _patch_sec(),
+            _patch_prices(),
+            _patch_news(),
+            patch("bullpit.graph.trader_node", side_effect=broken_trader),
+            pytest.raises(LLMUnavailable),
+        ):
+            run_request(
+                "AAPL",
+                "backtest",
+                SimClock(AS_OF),
+                settings=settings,
+                sessions=sessions,
+                broker=_fake_broker(settings),
+                completion_fn=llm,
+            )
+
+        with sessions() as session:
+            failed = session.query(Request).filter(Request.ticker == "AAPL").one()
+            assert failed.status == "failed"
+
+        with _patch_sec(), _patch_prices(), _patch_news():
+            result = run_request(
+                "AAPL",
+                "backtest",
+                SimClock(AS_OF),
+                settings=settings,
+                sessions=sessions,
+                broker=_fake_broker(settings),
+                completion_fn=llm,
+            )
+
+        assert result.rejection is None
+        assert len(result.debate) == 4
+        assert len(_debate_turn_rows(sessions, result.request_id)) == 4
 
 
 class TestNoFutureDataReachesAPrompt:
