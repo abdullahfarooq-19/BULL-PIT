@@ -29,7 +29,7 @@ Each task is about half a day or less, is one commit when the owner asks for com
 | [x] | M3-T-14 | **Graph, runner, CLI.** `graph.py` (`Deps`, `build_graph`, the analyst failure wrapper); `runners/request.py` (plan §9.7: cutoff, lock, run, record); the `request` command with auto-migrate | `bullpit/graph.py`, `bullpit/runners/request.py`, `bullpit/cli.py` | FR-1 to FR-3, FR-15, FR-18 to FR-20; D-M3-5, D-M3-9, D-M3-13; §7.1 C-5 | `uv run bullpit request AAPL --mode backtest --as-of 2024-07-12` completes against the real services and prints signals and a route | `8fd93f6` |
 | [x] | M3-T-15 | **Graph tests.** Record AAPL `NetIncomeLoss` and `EarningsPerShareDiluted` into the companyfacts fixture; `test_graph.py` (the four tests in plan §13) | `tests/fixtures/sec/aapl_companyfacts.json`, `tests/test_graph.py` | AC-1 (automated), AC-5, AC-6, AC-7, AC-9 | All four pass; whole suite still runs in under a minute | `c39b3eb` |
 | [x] | M3-T-16 | **Real runs.** AC-1 (5 tickers × 3 dates + one live); AC-3 revenue table; AC-4 rejections; AC-8 parallel start times; AC-11 journal rows, stale lock and Alembic schema | this file (evidence) | AC-1, AC-3, AC-4, AC-8, AC-11 | Evidence pasted below; every check passes | (docs-only) |
-| [x] | M3-T-17 | **Tokens and allowance.** Per-template token figures from `llm_calls` over the T-16 runs; set `llm_output_allowance_tokens` per FR-23; re-run one request to confirm nothing is flagged | `bullpit/config.py`, `.env.example`, this file | FR-23; AC-10; C14 | Figures and the new default recorded; the re-run has no flagged reply | `pending` |
+| [x] | M3-T-17 | **Tokens and allowance.** Per-template token figures from `llm_calls` over the T-16 runs; set `llm_output_allowance_tokens` per FR-23; re-run one request to confirm nothing is flagged | `bullpit/config.py`, `.env.example`, this file | FR-23; AC-10; C14 | Figures and the new default recorded; the re-run has no flagged reply | `aa2fde4` |
 | [ ] | M3-T-18 | **Acceptance.** README quick start gains a first `bullpit request`; retrospective (token numbers vs architecture §14, route split for D-M3-7, carry-overs); then, when the owner asks: push, CI green, merge to `master`, tag `m3` | `README.md`, this file | DoD §1.5 | Owner accepts | |
 
 ## Traceability
@@ -187,4 +187,66 @@ Confirmation re-run after lowering the default: `bullpit request MSFT --mode bac
 
 ## Retrospective
 
-*(written at T-18)*
+**Delivered:** the first half of the graph, end to end. Request check (asset, SEC filings, price
+history, account, all before any LLM call); three analysts that turn code-computed facts into
+evidence and let the small model judge only direction/confidence (technical, fundamentals) or
+per-headline score/relevance (sentiment); a signals board that scores and validates them; a brain
+that routes to debate or no_trade from thresholds alone, with no LLM call; a LangGraph graph
+wiring it together with the three analysts fanned out in parallel; a runner that enforces the
+backtest training-cutoff, the duplicate-request lock, and records every outcome to the journal;
+and a `bullpit request` CLI command. All 18 tasks done; AC-1 through AC-11 verified (automated
+where dev-plan §7 requires it, real runs otherwise, evidence in T-16/T-17 above). 109 tests, whole
+suite in ~8s, no network (`pytest-socket`).
+
+**Token numbers vs. architecture §14:** the architecture's per-request estimate for the "Analysts"
+step is ~5K tokens (often 2 calls, fundamentals cached). The real, measured per-request total for
+all three analysts is far smaller: technical ~394 tokens (304 input + 21 output + 69 reasoning,
+mean), fundamentals ~346, sentiment ~1022 (up to 15 headlines drives most of its cost) -- about
+1,760 tokens per request on average, well under a third of the architecture's estimate. This
+leaves generous headroom for M4's debate, trader and risk-review calls, which the architecture
+estimates at ~18-22K tokens on the large model. `llm_output_allowance_tokens` was lowered from
+M2's untuned 2000 to 1869 (3x the largest measured `output + reasoning`, 623, from a sentiment
+call) per M3-FR-23, tightening per-minute pacing headroom without affecting correctness -- all
+three templates stay far under the 8K TPM per-call ceiling either way.
+
+**Route split (D-M3-7):** across the 15 AC-1 backtest runs (5 reference tickers x 3 dates), 14
+routed to `debate` and 1 to `no_trade` (XOM at 2024-07-12, board score -0.133, weak and no
+conflict). This matches the specs-plan's own caveat ("noted, not changed"): a long-only system
+debating almost everything that isn't near-zero and non-conflicting will debate most of the time,
+since real signals are rarely all neutral at once. The thresholds (`brain_min_abs_score=0.15`,
+`brain_conflict_min_confidence=0.4`) are unchanged in M3, as specced; M7's debate-impact metric
+is the intended place to revisit whether skipping strongly bearish boards is worth an architecture
+change, not this milestone.
+
+**What went well**
+
+- The request-check design (asset -> SEC -> prices -> account, each check able to reject before
+  any LLM call) meant every AC-4 rejection case came out exactly as specced on the first real run
+  against Alpaca/SEC, including SPY (an ETF) and an unknown ticker -- no retries needed.
+- D-M3-1's "code writes every evidence fact" design paid off directly in AC-3: MSFT's Q4-derived
+  revenue ($64.73B) and XOM's CIK-override-routed revenue ($93.06B) both matched their real
+  filings exactly on the first live run, because the same math (and, for XOM, the same CIK
+  override) that passed the hand-built T-6 fixtures ran unchanged against real SEC data.
+- The `prompt_version` hash (a per-template-file constant, not per-rendered-prompt) turned out to
+  double as a free way to bucket `llm_calls` by analyst for the T-17 token measurement, with no
+  extra journal column needed.
+
+**What was harder than expected**
+
+- `CompiledStateGraph` is a generic type in LangGraph 1.2; `build_graph`'s return type needed all
+  four type parameters spelled out (`CompiledStateGraph[RequestState, None, RequestState,
+  RequestState]`) to satisfy mypy strict, not documented prominently in LangGraph's own examples.
+- `data/sec.py`'s existing "no SEC filings" message only covered the unknown-CIK case; SPY (a CIK
+  that exists but has no companyfacts, a 404 on the companyfacts endpoint) raised a different,
+  internal-detail message ("SEC request failed for ...: 404"). Caught during T-12's real-service
+  check, not from the unit tests (M1's own manual check had already surfaced the same 404 message
+  without it being flagged as a problem) -- fixed by normalising both cases to the FR-5 message in
+  `request_check.py`, which is where user-facing text belongs.
+
+**Carry-overs**
+
+- M4 re-measures its own (larger) prompts against the real 8K TPM ceiling once the debate, trader
+  and risk-review templates exist (dev-plan C14); this milestone's number only covers the three
+  analysts.
+- `llm_output_allowance_tokens` may need another look once M4's larger prompts are measured, since
+  a debate turn's reply is a different shape (free text plus citations, not a small JSON object).
