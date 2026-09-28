@@ -16,6 +16,7 @@ import json
 import math
 import os
 import random
+import threading
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
@@ -204,42 +205,53 @@ def _usage_last_24h(sessions: sessionmaker[Session], model: str) -> int:
 
 
 class _TokenBucket:
+    """Thread-safe (M3 NFR-2): three analysts share one bucket per model.
+
+    `_lock` guards only the check-and-mutate step; a thread that must wait
+    sleeps outside the lock, so it never blocks another thread's turn.
+    """
+
     def __init__(self, rpm_limit: int, tpm_limit: int) -> None:
         self._rpm_limit = rpm_limit
         self._tpm_limit = tpm_limit
         self._request_times: list[float] = []
         self._token_events: list[tuple[float, int]] = []
+        self._lock = threading.Lock()
 
     def acquire(self, tokens: int, *, sleep: Callable[[float], None]) -> None:
         while True:
-            now = time.monotonic()
-            cutoff = now - _BUCKET_WINDOW_SECONDS
-            self._request_times = [t for t in self._request_times if t >= cutoff]
-            self._token_events = [(t, n) for t, n in self._token_events if t >= cutoff]
-            tokens_used = sum(n for _, n in self._token_events)
-            under_rpm = len(self._request_times) < self._rpm_limit
-            under_tpm = tokens_used + tokens <= self._tpm_limit
-            if under_rpm and under_tpm:
-                self._request_times.append(now)
-                self._token_events.append((now, tokens))
-                return
+            with self._lock:
+                now = time.monotonic()
+                cutoff = now - _BUCKET_WINDOW_SECONDS
+                self._request_times = [t for t in self._request_times if t >= cutoff]
+                self._token_events = [(t, n) for t, n in self._token_events if t >= cutoff]
+                tokens_used = sum(n for _, n in self._token_events)
+                under_rpm = len(self._request_times) < self._rpm_limit
+                under_tpm = tokens_used + tokens <= self._tpm_limit
+                if under_rpm and under_tpm:
+                    self._request_times.append(now)
+                    self._token_events.append((now, tokens))
+                    return
             sleep(1.0)
 
 
 _token_buckets: dict[str, _TokenBucket] = {}
+_token_buckets_lock = threading.Lock()
 
 
 def _bucket_for(model: str, settings: Settings) -> _TokenBucket:
-    bucket = _token_buckets.get(model)
-    if bucket is None:
-        bucket = _TokenBucket(settings.llm_rpm_limit, settings.llm_tpm_limit)
-        _token_buckets[model] = bucket
-    return bucket
+    with _token_buckets_lock:
+        bucket = _token_buckets.get(model)
+        if bucket is None:
+            bucket = _TokenBucket(settings.llm_rpm_limit, settings.llm_tpm_limit)
+            _token_buckets[model] = bucket
+        return bucket
 
 
 def reset_token_buckets() -> None:
     """Test-only: pacing is per process (D-M2-3), so tests reset it between runs."""
-    _token_buckets.clear()
+    with _token_buckets_lock:
+        _token_buckets.clear()
 
 
 # --- Backoff (M2-FR-7; sec11.3) ---------------------------------------------
@@ -389,42 +401,49 @@ def _record(
 # --- Langfuse (optional; M2-FR-14, D7) --------------------------------------
 
 _langfuse_registered = False
+_langfuse_lock = threading.Lock()
 
 
 def _maybe_register_langfuse(settings: Settings) -> None:
     global _langfuse_registered
     if _langfuse_registered or not settings.langfuse_enabled:
         return
-    public_key, secret_key = settings.langfuse_public_key, settings.langfuse_secret_key
-    if public_key is None or secret_key is None:
-        missing = [
-            name
-            for name, value in (
-                ("LANGFUSE_PUBLIC_KEY", public_key),
-                ("LANGFUSE_SECRET_KEY", secret_key),
+    with _langfuse_lock:
+        if _langfuse_registered:
+            return
+        public_key, secret_key = settings.langfuse_public_key, settings.langfuse_secret_key
+        if public_key is None or secret_key is None:
+            missing = [
+                name
+                for name, value in (
+                    ("LANGFUSE_PUBLIC_KEY", public_key),
+                    ("LANGFUSE_SECRET_KEY", secret_key),
+                )
+                if value is None
+            ]
+            raise ConfigError(
+                f"LANGFUSE_ENABLED is true but these are not set: {', '.join(missing)}"
             )
-            if value is None
-        ]
-        raise ConfigError(f"LANGFUSE_ENABLED is true but these are not set: {', '.join(missing)}")
-    try:
-        import langfuse  # noqa: F401
-    except ImportError as exc:
-        raise ConfigError(
-            "LANGFUSE_ENABLED is true but the `langfuse` package isn't installed "
-            "(it's not a project dependency, D-M2-9). Run `uv add langfuse` to enable tracing."
-        ) from exc
-    os.environ["LANGFUSE_PUBLIC_KEY"] = public_key.get_secret_value()
-    os.environ["LANGFUSE_SECRET_KEY"] = secret_key.get_secret_value()
-    os.environ["LANGFUSE_HOST"] = settings.langfuse_host
-    litellm.success_callback.append("langfuse")
-    litellm.failure_callback.append("langfuse")
-    _langfuse_registered = True
+        try:
+            import langfuse  # noqa: F401
+        except ImportError as exc:
+            raise ConfigError(
+                "LANGFUSE_ENABLED is true but the `langfuse` package isn't installed "
+                "(it's not a project dependency, D-M2-9). Run `uv add langfuse` to enable tracing."
+            ) from exc
+        os.environ["LANGFUSE_PUBLIC_KEY"] = public_key.get_secret_value()
+        os.environ["LANGFUSE_SECRET_KEY"] = secret_key.get_secret_value()
+        os.environ["LANGFUSE_HOST"] = settings.langfuse_host
+        litellm.success_callback.append("langfuse")
+        litellm.failure_callback.append("langfuse")
+        _langfuse_registered = True
 
 
 def reset_langfuse_registration() -> None:
     """Test-only: registration is a module-level latch, guarded by a fixture."""
     global _langfuse_registered
-    _langfuse_registered = False
+    with _langfuse_lock:
+        _langfuse_registered = False
 
 
 # --- The real provider (the only code that touches LiteLLM) ----------------
