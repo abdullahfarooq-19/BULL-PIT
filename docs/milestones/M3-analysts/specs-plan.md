@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Part A (specs) approved by the owner on 2026-09-28, with Q1 answered **A** (deviation D10). Part B (plan) awaiting approval. Checks against the real services while writing the plan corrected Part A in the places listed in [§7.1](#71-corrections-found-while-planning); none changes scope or an acceptance criterion |
+| **Status** | Part A (specs) and Part B (plan) both approved by the owner on 2026-09-28, with Q1 answered **A** (deviation D10). Checks against the real services while writing the plan corrected Part A in the places listed in [§7.1](#71-corrections-found-while-planning); none changes scope or an acceptance criterion. Implemented; see [`task.md`](task.md) for task-by-task evidence and the retrospective |
 | **Date** | 2026-09-28 |
 | **Size** | XL. Normally `specs.md` + `plan.md` ([dev-plan §1.2](../../dev-plan.md#12-per-milestone-documents)); the owner asked for them combined in one file for M3 |
 | **Branch** | `m3-analysts` |

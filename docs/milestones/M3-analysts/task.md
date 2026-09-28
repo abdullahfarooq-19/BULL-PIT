@@ -2,9 +2,9 @@
 
 | | |
 |---|---|
-| **Status** | Draft, awaiting the owner's green light |
+| **Status** | Implemented, T-1 through T-18 done; awaiting owner acceptance (merge and tag `m3`) |
 | **Date** | 2026-09-28 |
-| **Specs and plan** | [`specs-plan.md`](specs-plan.md) (Part A approved 2026-09-28, Q1 = A; Part B awaiting approval) |
+| **Specs and plan** | [`specs-plan.md`](specs-plan.md) (Part A and Part B both approved 2026-09-28, Q1 = A) |
 | **Branch** | `m3-analysts`, from `master` |
 
 Each task is about half a day or less, is one commit when the owner asks for commits (CLAUDE.md), and is ticked only when its check passes. After every task: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy bullpit` and `uv run pytest` are clean, and the diff has been re-read for anything the task doesn't need.
