@@ -8,15 +8,28 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pytest
+from litellm.exceptions import (
+    AuthenticationError,
+    BadRequestError,
+    ServiceUnavailableError,
+)
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from bullpit.clock import utc_now
 from bullpit.config import Settings
-from bullpit.errors import PromptTooLarge, QuotaExhausted
+from bullpit.errors import BullPitError, LLMUnavailable, PromptTooLarge, QuotaExhausted
 from bullpit.journal.models import LLMCall
-from bullpit.llm.gateway import CompletionReply, Role, call_llm
+from bullpit.llm.gateway import (
+    CompletionReply,
+    CompletionRequest,
+    ProviderTransient,
+    RateLimited,
+    Role,
+    call_llm,
+    litellm_completion,
+)
 from tests.llm.fake_provider import FakeProvider
 
 TEMPLATE = "measurement_probe.md"
@@ -156,8 +169,6 @@ def test_429_retried_with_backoff_then_succeeds(
     settings: Settings, sessions: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr("bullpit.llm.gateway.random.uniform", lambda _a, _b: 0.0)
-    from bullpit.llm.gateway import RateLimited
-
     provider = FakeProvider([RateLimited("429"), RateLimited("429"), _reply()])
     waits: list[float] = []
     kwargs = _kwargs(settings, sessions, provider)
@@ -171,15 +182,21 @@ def test_429_retried_with_backoff_then_succeeds(
     assert len(provider.requests) == 3
 
 
-def test_429_on_every_attempt_raises_quota_exhausted(
-    settings: Settings, sessions: sessionmaker[Session], monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize(
+    ("failure", "raised"),
+    [(RateLimited("429"), QuotaExhausted), (ProviderTransient("timeout"), LLMUnavailable)],
+)
+def test_failure_on_every_attempt_raises_after_retries(
+    settings: Settings,
+    sessions: sessionmaker[Session],
+    failure: Exception,
+    raised: type[BullPitError],
 ) -> None:
-    monkeypatch.setattr("bullpit.llm.gateway.random.uniform", lambda _a, _b: 0.0)
-    from bullpit.llm.gateway import RateLimited
-
-    provider = FakeProvider([RateLimited("429")] * (settings.llm_max_retries + 1))
-    with pytest.raises(QuotaExhausted):
+    provider = FakeProvider([failure] * (settings.llm_max_retries + 1))
+    with pytest.raises(raised):
         call_llm(**_kwargs(settings, sessions, provider))  # type: ignore[arg-type]
+    assert len(provider.requests) == settings.llm_max_retries + 1
+    assert _all_calls(sessions) == []
 
 
 # --- AC-4: validation retry and flagged fallback ----------------------------
@@ -207,9 +224,9 @@ def test_invalid_json_then_valid_retries_once_with_error_included(
 def test_invalid_twice_returns_safe_default_flagged_and_caches_nothing(
     settings: Settings, sessions: sessionmaker[Session]
 ) -> None:
-    bad = CompletionReply(content="not json", input_tokens=10, output_tokens=5, reasoning_tokens=1)
     empty = CompletionReply(content="", input_tokens=8, output_tokens=0, reasoning_tokens=3)
-    provider = FakeProvider([bad, empty])
+    bad = CompletionReply(content="not json", input_tokens=10, output_tokens=5, reasoning_tokens=1)
+    provider = FakeProvider([empty, bad])
 
     result = call_llm(**_kwargs(settings, sessions, provider))  # type: ignore[arg-type]
 
@@ -218,6 +235,8 @@ def test_invalid_twice_returns_safe_default_flagged_and_caches_nothing(
     assert result.input_tokens == bad.input_tokens + empty.input_tokens
     assert result.output_tokens == bad.output_tokens + empty.output_tokens
     assert result.reasoning_tokens == bad.reasoning_tokens + empty.reasoning_tokens
+    # An empty (e.g. provider-rejected) first reply isn't replayed as an empty assistant turn.
+    assert all(message["content"] for message in provider.requests[1].messages)
 
     # Nothing was cached: an identical call is still a miss and calls the provider.
     fresh_provider = FakeProvider([_reply()])
@@ -322,3 +341,64 @@ def test_oversized_prompt_raises_before_network_call(
     with pytest.raises(PromptTooLarge, match=TEMPLATE):
         call_llm(**kwargs)  # type: ignore[arg-type]
     assert provider.requests == []
+
+
+# --- The LiteLLM adapter: no LiteLLM exception leaves it (specs-plan sec12) ---
+
+_MODEL = "openai/gpt-oss-20b"
+
+
+def _request() -> CompletionRequest:
+    return CompletionRequest(
+        model=_MODEL,
+        messages=[{"role": "user", "content": "x" * 400}],
+        temperature=0.0,
+        seed=1,
+        reasoning_effort="low",
+        max_tokens=2000,
+    )
+
+
+@pytest.mark.parametrize(
+    ("provider_error", "raised"),
+    [
+        (ServiceUnavailableError("overloaded", "groq", _MODEL), ProviderTransient),
+        (AuthenticationError("invalid api key", "groq", _MODEL), LLMUnavailable),
+        (BadRequestError("bad request", _MODEL, "groq"), LLMUnavailable),
+    ],
+)
+def test_provider_errors_are_mapped(
+    settings: Settings,
+    monkeypatch: pytest.MonkeyPatch,
+    provider_error: Exception,
+    raised: type[Exception],
+) -> None:
+    def fail(**_kwargs: object) -> None:
+        raise provider_error
+
+    monkeypatch.setattr("bullpit.llm.gateway.get_settings", lambda: settings)
+    monkeypatch.setattr("bullpit.llm.gateway.litellm.completion", fail)
+    with pytest.raises(raised):
+        litellm_completion(_request())
+
+
+def test_json_rejected_by_provider_is_an_empty_reply_charged_worst_case(
+    settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    sent: dict[str, object] = {}
+
+    def reject(**kwargs: object) -> None:
+        sent.update(kwargs)
+        raise BadRequestError(
+            'GroqException - {"error":{"code":"json_validate_failed"}}', _MODEL, "groq"
+        )
+
+    monkeypatch.setattr("bullpit.llm.gateway.get_settings", lambda: settings)
+    monkeypatch.setattr("bullpit.llm.gateway.litellm.completion", reject)
+
+    reply = litellm_completion(_request())
+
+    assert reply.content == ""
+    assert reply.input_tokens == 100  # 400 characters at 4 per token
+    assert reply.output_tokens == 2000  # the whole output cap
+    assert sent["timeout"] == settings.llm_timeout_seconds

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Approved by the owner on 2026-09-28. Pre-development review the same day corrected the points listed in [§7.1](#71-pre-development-review-corrections) |
+| **Status** | Approved by the owner on 2026-09-28. Pre-development review the same day corrected the points listed in [§7.1](#71-pre-development-review-corrections); the pre-acceptance review corrected those in [§7.2](#72-pre-acceptance-review-corrections) |
 | **Date** | 2026-09-28 |
 | **Size** | M (specs and plan share this file, [dev-plan §1.2](../../dev-plan.md#12-per-milestone-documents)) |
 | **Branch** | `m2-llm-gateway` |
@@ -88,7 +88,7 @@ M2 also bootstraps the journal database (D3), because token logging needs somewh
 
 **Rate limiting and retries**
 
-- **M2-FR-7** A 429, a timeout or a connection error is retried with exponential backoff and jitter: wait `llm_backoff_base_seconds × 2^attempt` plus a random jitter below `llm_backoff_base_seconds`, up to `llm_max_retries` retries. The wait goes through a `sleep` callable injected into `call_llm` (default `time.sleep`), so the automated suite never really sleeps. Any other provider error is not retried.
+- **M2-FR-7** Every call carries a `llm_timeout_seconds` timeout. A 429, a timeout, a connection error or a 500/502/503 is retried with exponential backoff and jitter: wait `llm_backoff_base_seconds × 2^attempt` plus a random jitter below `llm_backoff_base_seconds`, up to `llm_max_retries` retries. The wait goes through a `sleep` callable injected into `call_llm` (default `time.sleep`), so the automated suite never really sleeps. Any other provider error is not retried.
 - **M2-FR-8** A token bucket per model enforces `llm_rpm_limit` and `llm_tpm_limit` *within this process*, so the gateway paces its own calls before Groq has to reject them.
 
 **Daily budget**
@@ -97,7 +97,7 @@ M2 also bootstraps the journal database (D3), because token logging needs somewh
 
 **Structured output**
 
-- **M2-FR-10** Every call asks the provider for JSON mode (`response_format={"type": "json_object"}`, confirmed working in M0 finding A3) and validates the reply against a caller-supplied Pydantic model in code. An invalid reply is retried exactly once, with the validation error added to the conversation. A second failure returns the caller's `safe_default` and marks the result `flagged=True`; no exception is raised, since callers (M3+) already handle a flagged neutral signal (architecture Part 8).
+- **M2-FR-10** Every call asks the provider for JSON mode (`response_format={"type": "json_object"}`, confirmed working in M0 finding A3) and validates the reply against a caller-supplied Pydantic model in code. An invalid reply is retried exactly once, with the validation error added to the conversation. A second failure returns the caller's `safe_default` and marks the result `flagged=True`; no exception is raised, since callers (M3+) already handle a flagged neutral signal (architecture Part 8). In JSON mode Groq validates server-side and rejects a generation that isn't a JSON object (including one cut off by `max_tokens`) with a 400 `json_validate_failed` instead of returning it; the gateway treats that as an empty, invalid reply, charged at the worst case (prompt estimate plus `max_tokens`, since Groq reports no usage for it).
 
 **Token logging**
 
@@ -140,6 +140,7 @@ M2 also bootstraps the journal database (D3), because token logging needs somewh
 | `llm_daily_token_budget` | `LLM_DAILY_TOKEN_BUDGET` | `int` | `200000` | Per model, rolling 24 h, architecture §14 |
 | `llm_max_retries` | `LLM_MAX_RETRIES` | `int` | `5` | 429 / transient-error retry cap |
 | `llm_backoff_base_seconds` | `LLM_BACKOFF_BASE_SECONDS` | `float` | `1.0` | First backoff wait; doubles per retry (M2-FR-7) |
+| `llm_timeout_seconds` | `LLM_TIMEOUT_SECONDS` | `float` | `60.0` | Per-call timeout (M2-FR-7); LiteLLM's own default is 6000 s. Measured calls take about 1 s |
 | `llm_seed` | `LLM_SEED` | `int` | `1` | Default seed; callers may override per call |
 | `journal_db_path` | `JOURNAL_DB_PATH` | `Path` | `journal.db` | SQLite file, relative to the working directory; git-ignored by the existing `*.db` rule |
 | `langfuse_enabled` | `LANGFUSE_ENABLED` | `bool` | `false` | D7 |
@@ -207,10 +208,10 @@ class CompletionFn(Protocol):
     def __call__(self, request: CompletionRequest) -> CompletionReply: ...
 
 class RateLimited(Exception): ...        # gateway-internal: provider returned 429
-class ProviderTransient(Exception): ...  # gateway-internal: timeout or connection error
+class ProviderTransient(Exception): ...  # gateway-internal: timeout, connection error, 500/502/503
 ```
 
-`litellm_completion` is the only code that touches LiteLLM: it adds JSON mode and the Groq key, calls `litellm.completion`, maps usage (reasoning tokens from `completion_tokens_details.reasoning_tokens`, defaulting to 0), and turns LiteLLM's rate-limit exception into `RateLimited` and its timeout and connection exceptions into `ProviderTransient`. `fake_provider.py` implements `CompletionFn` directly and raises the same two to simulate failures.
+`litellm_completion` is the only code that touches LiteLLM, and no LiteLLM exception leaves it: it adds JSON mode, the Groq key and the timeout, calls `litellm.completion`, maps usage (reasoning tokens from `completion_tokens_details.reasoning_tokens`, defaulting to 0), and maps failures: rate limit → `RateLimited`; timeout, connection error, 500/502/503 → `ProviderTransient`; a `json_validate_failed` rejection → an empty reply (M2-FR-10); any other provider error (bad key, bad request) → `LLMUnavailable`, not retried. `fake_provider.py` implements `CompletionFn` directly and raises the two internal exceptions to simulate failures.
 
 Neither internal exception leaves the gateway. If retries run out, a persistent `RateLimited` becomes **`QuotaExhausted`** (Groq is still refusing, most likely because its own daily quota is spent, possibly by calls outside Bull Pit; M6's runner then pauses and resumes exactly as for our own budget), and a persistent `ProviderTransient` becomes **`LLMUnavailable`**.
 
@@ -265,7 +266,7 @@ class LLMCall(Base):
 ```text
 BullPitError
 ├── PromptTooLarge   the estimated call size exceeds the per-minute token limit (used from M2)
-└── LLMUnavailable   the provider kept timing out or refusing connections through every retry (used from M2)
+└── LLMUnavailable   the provider kept failing transiently through every retry, or rejected the request outright (used from M2)
 ```
 
 Added to `errors.py` alongside the existing declarations ([§7](#7-decisions-made-in-this-document) D-M2-1). `QuotaExhausted` and `ValidationFailed` (declared in M0) are unchanged: `QuotaExhausted` gets its first real behaviour here; `ValidationFailed` stays unused by the gateway, because an invalid reply degrades to the safe default instead of raising (M2-FR-10).
@@ -316,6 +317,17 @@ The owner approved this document on 2026-09-28. A review against the existing co
 | R8 | A separate `llm_cache_dir` setting duplicated the cache root | Derived as `data_cache_dir / "llm"` (§5.1) |
 | R9 | `langfuse` was to be added as a dependency without a stated reason; the callback was registered at import time | Not a dependency (D-M2-9); registered lazily on first call (M2-FR-14) |
 | R10 | The measurement script was outside `scripts/spikes/`; `alembic.ini` and the mypy exclusion for migrations were missing from the file list | D-M2-10; §9.1 and §9.5 updated |
+
+### 7.2 Pre-acceptance review corrections
+
+A review of the finished code before acceptance (2026-09-28) found these, all corrected in code, tests and the sections above. None changes scope or an acceptance criterion; all bring the code in line with architecture Part 3 / Part 8 and §12.
+
+| # | Problem | Correction |
+|---|---|---|
+| R11 | In JSON mode Groq never returns malformed JSON: it rejects the generation with a 400 `json_validate_failed` (confirmed against real Groq, both for non-JSON output and for a reply cut off by `max_tokens`). That raw LiteLLM error escaped `call_llm`, so a bad generation would have crashed the request instead of taking the retry-then-safe-default path | The rejection becomes an empty, invalid reply, charged at the worst case (M2-FR-10); the validation retry skips replaying an empty assistant turn |
+| R12 | Only 429, timeout and connection errors were mapped; a 500/502/503, a bad key or a bad request escaped as raw LiteLLM exceptions, breaking §12 | 500/502/503 → `ProviderTransient` (retried); any other provider error → `LLMUnavailable`, not retried (§5.2) |
+| R13 | No per-call timeout was set, so LiteLLM's 6000 s default applied and one hung call could stall a request for 100 minutes | New setting `llm_timeout_seconds` (60 s, §5.1), passed on every call (M2-FR-7) |
+| R14 | The Langfuse check tested for the package before the keys, so "enabled without keys" could never report the missing key, and the key message didn't say which one was missing | Keys checked first; the error lists exactly the missing variables (M2-FR-14) |
 
 ## 8. Open questions for the owner
 
@@ -465,7 +477,7 @@ for attempt in 0 .. llm_max_retries:
         sleep(base * 2**attempt + random.uniform(0, base))
 ```
 
-Any other exception propagates immediately; retrying an auth or bad-request error can't help. The validation retry (step 7) is separate from this loop and happens at most once.
+Any other provider error arrives already wrapped as `LLMUnavailable` (§5.2) and propagates immediately; retrying an auth or bad-request error can't help. The validation retry (step 7) is separate from this loop and happens at most once.
 
 ## 12. Error handling
 
@@ -484,7 +496,8 @@ Per [dev-plan §7.1](../../dev-plan.md#71-must-have-automated-tests), the gatewa
 |---|---|
 | `Role.SMALL` / `Role.LARGE` reach the configured model, with the role's `reasoning_effort` and `max_tokens` = the allowance | AC-1 |
 | Same call twice: second is a hit, 0 tokens, `cache_hit` row, fake provider called once; changing the seed calls the provider again | AC-2 |
-| Two `RateLimited` then success: two recorded waits, the second longer, then a normal result; `RateLimited` on every attempt raises `QuotaExhausted` | AC-3 |
+| Two `RateLimited` then success: two recorded waits, the second longer, then a normal result; `RateLimited` on every attempt raises `QuotaExhausted`, `ProviderTransient` on every attempt raises `LLMUnavailable` | AC-3 |
+| `litellm_completion` (with `litellm.completion` replaced): a 503 becomes `ProviderTransient`, a bad key or bad request `LLMUnavailable`; a `json_validate_failed` rejection becomes an empty reply charged at the worst case; the timeout is sent | §12, §7.2 |
 | Invalid JSON, then valid: one retry whose messages include the error. Invalid twice: `safe_default`, `flagged=True`, tokens summed over both attempts, nothing cached | AC-4 |
 | Hit, success and flagged fallback each write exactly one `llm_calls` row | AC-5 |
 | `llm_calls` seeded near the budget (rows at `utc_now()`): the next call raises `QuotaExhausted` and the provider is never called; the same seed rows dated 25 h ago don't count | AC-6 |

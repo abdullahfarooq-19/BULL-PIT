@@ -26,7 +26,15 @@ from typing import Protocol
 
 import litellm
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
-from litellm.exceptions import APIConnectionError, RateLimitError, Timeout
+from litellm.exceptions import (
+    APIConnectionError,
+    BadGatewayError,
+    BadRequestError,
+    InternalServerError,
+    RateLimitError,
+    ServiceUnavailableError,
+    Timeout,
+)
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, sessionmaker
@@ -42,6 +50,9 @@ logger = get_logger(__name__)
 _PROMPTS_DIR = Path(__file__).parent / "prompts"
 _CHARS_PER_TOKEN = 4
 _BUCKET_WINDOW_SECONDS = 60.0
+# Groq validates JSON mode server-side and rejects a generation that isn't a
+# JSON object (including one cut off by `max_tokens`) with this error code.
+_GROQ_JSON_REJECTED = "json_validate_failed"
 
 # autoescape is for HTML/XML output; these templates render plain-text LLM
 # prompts, so escaping would corrupt them.
@@ -106,9 +117,13 @@ def _render(template_name: str, variables: Mapping[str, object]) -> tuple[str, s
     return rendered, version
 
 
-def _estimate_tokens(rendered_prompt: str, settings: Settings) -> int:
+def _prompt_tokens(text: str) -> int:
     """D-M2-2: a length heuristic, not a real tokenizer; errs high on purpose."""
-    return math.ceil(len(rendered_prompt) / _CHARS_PER_TOKEN) + settings.llm_output_allowance_tokens
+    return math.ceil(len(text) / _CHARS_PER_TOKEN)
+
+
+def _estimate_tokens(rendered_prompt: str, settings: Settings) -> int:
+    return _prompt_tokens(rendered_prompt) + settings.llm_output_allowance_tokens
 
 
 def _model_for(role: Role, settings: Settings) -> str:
@@ -264,7 +279,7 @@ def _call_with_backoff(
 def _validate[T: BaseModel](content: str, response_model: type[T]) -> tuple[T | None, str | None]:
     """Returns `(value, error)`; `value` is `None` iff `error` is set."""
     if not content:
-        return None, "the reply was empty"
+        return None, "the reply was empty or was not a JSON object"
     try:
         payload = json.loads(content)
     except json.JSONDecodeError as exc:
@@ -302,11 +317,16 @@ def _validate_with_retry[T: BaseModel](
     if value is not None:
         return _Validated(value, False, total_input, total_output, total_reasoning)
 
+    # A provider-rejected generation has no content to replay, and an empty
+    # assistant turn isn't a valid message.
+    previous_reply = (
+        [{"role": "assistant", "content": first_reply.content}] if first_reply.content else []
+    )
     retry_request = replace(
         request,
         messages=[
             *request.messages,
-            {"role": "assistant", "content": first_reply.content},
+            *previous_reply,
             {
                 "role": "user",
                 "content": (
@@ -375,6 +395,17 @@ def _maybe_register_langfuse(settings: Settings) -> None:
     global _langfuse_registered
     if _langfuse_registered or not settings.langfuse_enabled:
         return
+    public_key, secret_key = settings.langfuse_public_key, settings.langfuse_secret_key
+    if public_key is None or secret_key is None:
+        missing = [
+            name
+            for name, value in (
+                ("LANGFUSE_PUBLIC_KEY", public_key),
+                ("LANGFUSE_SECRET_KEY", secret_key),
+            )
+            if value is None
+        ]
+        raise ConfigError(f"LANGFUSE_ENABLED is true but these are not set: {', '.join(missing)}")
     try:
         import langfuse  # noqa: F401
     except ImportError as exc:
@@ -382,12 +413,8 @@ def _maybe_register_langfuse(settings: Settings) -> None:
             "LANGFUSE_ENABLED is true but the `langfuse` package isn't installed "
             "(it's not a project dependency, D-M2-9). Run `uv add langfuse` to enable tracing."
         ) from exc
-    if settings.langfuse_public_key is None or settings.langfuse_secret_key is None:
-        raise ConfigError(
-            "LANGFUSE_ENABLED is true but LANGFUSE_PUBLIC_KEY or LANGFUSE_SECRET_KEY is not set."
-        )
-    os.environ["LANGFUSE_PUBLIC_KEY"] = settings.langfuse_public_key.get_secret_value()
-    os.environ["LANGFUSE_SECRET_KEY"] = settings.langfuse_secret_key.get_secret_value()
+    os.environ["LANGFUSE_PUBLIC_KEY"] = public_key.get_secret_value()
+    os.environ["LANGFUSE_SECRET_KEY"] = secret_key.get_secret_value()
     os.environ["LANGFUSE_HOST"] = settings.langfuse_host
     litellm.success_callback.append("langfuse")
     litellm.failure_callback.append("langfuse")
@@ -404,22 +431,52 @@ def reset_langfuse_registration() -> None:
 
 
 def litellm_completion(request: CompletionRequest) -> CompletionReply:
+    """Call Groq through LiteLLM; no LiteLLM exception leaves this function.
+
+    429 -> `RateLimited`; timeout, connection error, 500/502/503 ->
+    `ProviderTransient` (both retried by the caller). A JSON-mode generation
+    Groq rejects comes back as an empty reply, which the gateway treats as
+    an invalid reply (FR-10). Any other provider error -> `LLMUnavailable`,
+    not retried.
+    """
     settings = get_settings()
+    api_key = settings.require("GROQ_API_KEY")
     try:
         response = litellm.completion(
             model=f"groq/{request.model}",
-            api_key=settings.require("GROQ_API_KEY"),
+            api_key=api_key,
             messages=request.messages,
             temperature=request.temperature,
             seed=request.seed,
             reasoning_effort=request.reasoning_effort,
             max_tokens=request.max_tokens,
             response_format={"type": "json_object"},
+            timeout=settings.llm_timeout_seconds,
         )
     except RateLimitError as exc:
         raise RateLimited(str(exc)) from exc
-    except (Timeout, APIConnectionError) as exc:
+    except (
+        Timeout,
+        APIConnectionError,
+        InternalServerError,
+        BadGatewayError,
+        ServiceUnavailableError,
+    ) as exc:
         raise ProviderTransient(str(exc)) from exc
+    except BadRequestError as exc:
+        if _GROQ_JSON_REJECTED not in str(exc):
+            raise LLMUnavailable(f"{request.model}: request rejected: {exc}") from exc
+        # Groq reports no usage for a rejected generation; charge the worst
+        # case so the daily budget can only over-count (sec11.2).
+        prompt = "".join(message["content"] for message in request.messages)
+        return CompletionReply(
+            content="",
+            input_tokens=_prompt_tokens(prompt),
+            output_tokens=request.max_tokens,
+            reasoning_tokens=0,
+        )
+    except Exception as exc:
+        raise LLMUnavailable(f"{request.model}: provider error: {exc}") from exc
 
     content = response.choices[0].message.content or ""
     usage = response.usage

@@ -63,6 +63,7 @@ class Settings(BaseSettings):
     llm_daily_token_budget: int = 200_000
     llm_max_retries: int = 5
     llm_backoff_base_seconds: float = 1.0
+    llm_timeout_seconds: float = 60.0
     llm_seed: int = 1
 
     # --- Journal (M2) -------------------------------------------------------

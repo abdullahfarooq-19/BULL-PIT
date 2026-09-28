@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | T-1 to T-11 done; T-12 (acceptance) awaiting the owner |
+| **Status** | T-1 to T-11a done; T-12 (acceptance) awaiting the owner |
 | **Date** | 2026-09-28 |
 | **Specs and plan** | [`specs-plan.md`](specs-plan.md) (approved 2026-09-28; pre-development corrections in its §7.1) |
 | **Branch** | `m2-llm-gateway`, from `master` |
@@ -24,6 +24,7 @@ Each task is about half a day or less, is one commit when the owner asks for com
 | [x] | M2-T-9 | **Daily budget.** Step 4: rolling-24-hour sum over non-cache-hit `llm_calls` rows for the model (specs-plan §11.2), `QuotaExhausted` before any call; a cache hit is still served over budget | `bullpit/llm/gateway.py`, `tests/llm/test_gateway.py` | FR-9; D-M2-3; AC-5, AC-6 | AC-6 tests pass (seeded rows at now: `QuotaExhausted`, provider never called; the same rows 25 h old: call goes through); AC-5 test passes (hit, success and flagged fallback each write exactly one row) | `8238552` |
 | [x] | M2-T-10 | **Langfuse toggle.** Register LiteLLM's Langfuse callback once, on the first `call_llm`, only when `langfuse_enabled`; pass host and keys from `Settings`; `ConfigError` for a missing key or package | `bullpit/llm/gateway.py` | FR-14; D7 | Manual check below: defaults leave `litellm.success_callback` empty; enabled without keys raises `ConfigError` naming the variable | `8238552` |
 | [x] | M2-T-11 | **Measurement run.** `scripts/spikes/measure_tokens.py` (specs-plan §9.6); run once against real Groq, both pinned models | `scripts/spikes/measure_tokens.py`, this file (evidence) | FR-16; D-M2-10; AC-7 | Output pasted below; neither call flagged; both real totals below `llm_tpm_limit` | `4c685dc` |
+| [x] | M2-T-11a | **Pre-acceptance review fixes.** Groq's `json_validate_failed` rejection handled as an invalid reply (worst-case charge; no empty assistant turn on retry); 500/502/503 → `ProviderTransient`, any other provider error → `LLMUnavailable`; `llm_timeout_seconds` setting passed on every call; Langfuse keys checked before the package, naming exactly what's missing; `measure_tokens.py` uses `journal_url` | `bullpit/llm/gateway.py`, `bullpit/config.py`, `.env.example`, `bullpit/errors.py`, `tests/llm/test_gateway.py`, `scripts/spikes/measure_tokens.py`, `specs-plan.md` §7.2 | specs-plan §7.2 R11–R14; §12; architecture Part 3, Part 8 | Adapter and every-attempt tests pass; a Groq-rejected generation returns the flagged safe default through the real gateway; AC-7 re-run unchanged; Langfuse manual check shows the missing variable | pending |
 | [ ] | M2-T-12 | **Acceptance.** Alembic schema check against `models.py`; ADR-0004 → `Accepted`; README quick start gains `uv run alembic upgrade head`; M0 finding C4 marked answered (pointing to M2-FR-4a); retrospective with the AC-7 numbers compared to architecture §14; then, when the owner asks: push, CI green, merge to `master`, tag `m2` | `docs/adr/0004-llm-response-cache-storage.md`, `README.md`, `docs/milestones/M0-foundations/findings.md`, this file | DoD §1.5; AC-7 | Owner accepts | pending |
 
 ## Traceability
@@ -58,7 +59,8 @@ Each task is about half a day or less, is one commit when the owner asks for com
 | D-M2-5 | T-3 |
 | D-M2-6 | T-5 |
 | D-M2-10 | T-11 |
-| M0 finding C4 | T-6 (behaviour), T-12 (marked answered) |
+| M0 finding C4 | T-6 (behaviour), T-11a (Groq's JSON-mode rejection), T-12 (marked answered) |
+| specs-plan §7.2 R11–R14 | T-11a |
 
 ---
 
@@ -76,11 +78,16 @@ matches `journal/models.py` exactly: `llm_calls` (13 columns, PK `id`, indexes
 
 ### M2-T-10: Langfuse off by default
 
-With default settings, `_maybe_register_langfuse` leaves `litellm.success_callback == []`
-(the check never even imports `langfuse`). With `langfuse_enabled=True` and the
-`langfuse` package not installed (it's not a dependency, D-M2-9), the same call raises
-`ConfigError: LANGFUSE_ENABLED is true but the \`langfuse\` package isn't installed
-(it's not a project dependency, D-M2-9). Run \`uv add langfuse\` to enable tracing.`
+Re-run after the T-11a fix (keys are now checked before the package):
+
+| Case | Result |
+|---|---|
+| Defaults | `litellm.success_callback == []`; `langfuse` never imported |
+| Enabled, no keys | `ConfigError: LANGFUSE_ENABLED is true but these are not set: LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY` |
+| Enabled, secret key missing | `ConfigError: LANGFUSE_ENABLED is true but these are not set: LANGFUSE_SECRET_KEY` |
+| Enabled, keys set, package not installed | `ConfigError: … the \`langfuse\` package isn't installed (it's not a project dependency, D-M2-9). Run \`uv add langfuse\` to enable tracing.` |
+
+No callback was registered in any case.
 
 ### M2-T-11: token measurement (AC-7)
 
@@ -98,10 +105,42 @@ both pinned models, real Groq calls, journal and cache in a throwaway temp dir:
 Done. Both calls within llm_tpm_limit and not flagged.
 ```
 
-Neither call flagged; both real totals (321, 317) are far below `llm_tpm_limit` (8000)
-and close to the reasoning-token range M0 found at `low` effort (A4: 9-16 tokens on a
-much shorter prompt) scaled up for a fuller analyst-shaped prompt. `llm_output_allowance_tokens`
-(2000) leaves ample headroom past real reasoning + visible output on both models.
+Neither call flagged; both real totals (321, 317) are far below `llm_tpm_limit` (8000).
+Reasoning (55-59 tokens) is 4-6 times M0's figure at `low` effort (A4: 9-16 tokens), which
+used a one-line prompt; this prompt carries an indicator table and a decision to make.
+`llm_output_allowance_tokens` (2000) still leaves wide headroom past real reasoning plus
+visible output on both models. Re-run after the T-11a fixes: identical token counts
+(latency 1156 / 1046 ms), exit 0.
+
+### M2-T-11a: pre-acceptance review fixes
+
+**Groq's JSON-mode failure behaviour** (throwaway probe, two real calls on the small
+model with `response_format={"type": "json_object"}`): a reply cut off by
+`max_tokens=40`, and a prompt asking for plain-text output, both came back as
+`litellm.BadRequestError` (400) with code `json_validate_failed`
+(`"Failed to generate JSON… 'failed_generation': 'max completion tokens reached before
+generating a valid document'"`). Groq never returns the malformed text as content, so
+before this fix the validation retry and safe default could never run for bad JSON.
+
+**The rejected path through the real gateway** (throwaway script,
+`llm_output_allowance_tokens` forced to 30 so reasoning overruns the cap):
+
+```
+value: direction='neutral' confidence=0.0 flagged: True cache_hit: False
+tokens charged: input 247 output 60
+llm_calls rows: 1 flagged: [True]
+cache files written: 0
+```
+
+Both attempts were rejected by Groq; `call_llm` returned the safe default, flagged,
+wrote exactly one row charged at the worst case (2 × the 30-token cap), and cached
+nothing. Before the fix this call raised a raw `BadRequestError`.
+
+**Tests:** `test_provider_errors_are_mapped` (503 → `ProviderTransient`; bad key and bad
+request → `LLMUnavailable`), `test_json_rejected_by_provider_is_an_empty_reply_charged_worst_case`
+(also checks the timeout is sent) and the `ProviderTransient` case of
+`test_failure_on_every_attempt_raises_after_retries` all pass. All four checks are clean;
+the suite is 86 tests.
 
 ### M2-T-12: Alembic schema check
 
@@ -127,8 +166,8 @@ rolling-24-hour daily budget backed by the journal, JSON-mode structured
 output with one validation retry and a flagged safe-default fallback, and an
 optional Langfuse toggle. The journal (`journal.db`, SQLAlchemy 2.0 models,
 Alembic) is bootstrapped with `requests` (minimal) and `llm_calls`. All 8 ACs
-pass: AC-1 to AC-6 and AC-8 by `tests/llm/test_gateway.py` (12 tests, run in
-under half a second, no network), AC-7 by the real measurement run below.
+pass: AC-1 to AC-6 and AC-8 by `tests/llm/test_gateway.py` (16 tests, run in
+under half a second, no network), AC-7 by the real measurement run above.
 
 **AC-7 numbers vs. architecture §14:** the measurement probe (a compact,
 analyst-shaped prompt asking for `direction`/`confidence`) cost 321 total
@@ -156,5 +195,31 @@ because SQLite kept the journal file's handle open after the measurement
 script finished; fixed with an explicit `engine.dispose()` before the temp
 directory is removed.
 
-**Nothing else deviated from `specs-plan.md`.** No scope was added or cut
-during implementation.
+The pre-acceptance review (specs-plan §7.2, R11-R14, task T-11a) found the
+most important bug of the milestone: in JSON mode Groq rejects a bad
+generation server-side (`json_validate_failed`) rather than returning it, so
+the validation-retry-and-safe-default path could never run for malformed
+JSON, and the raw LiteLLM error would have crashed an analyst request. The
+fake provider couldn't expose this, because it returns invalid content
+directly, which the real provider never does. The lesson for later
+milestones is to exercise failure paths against the real provider once, not
+only the happy path. The same review mapped the remaining LiteLLM errors
+(nothing now escapes the adapter), added a per-call timeout (LiteLLM's
+default was 6000 s), and fixed the Langfuse check order.
+
+**Nothing else deviated from `specs-plan.md`.** No scope was added or cut.
+
+**Carry-overs:**
+
+- *Pacing is conservative.* The per-minute bucket counts each call's full
+  estimate, including the 2000-token output allowance, so each model gets at
+  most 2-3 calls a minute even though a real call used about 320 tokens. This
+  matches the spec and architecture §14 ("a request takes a few minutes").
+  M3 should revisit the allowance once real agent prompts are measured (C14).
+- *A small budget under-count remains.* If the first reply is invalid and the
+  validation retry then runs out of retries (`QuotaExhausted` or
+  `LLMUnavailable`), the first attempt's tokens aren't logged. This needs an
+  invalid reply followed by six provider failures in a row, and Groq's own 429
+  still stops us, so it's accepted as is.
+- *Flagged rows from a Groq rejection show `output_tokens` equal to the cap.*
+  That's the worst-case charge, not tokens the model actually produced.

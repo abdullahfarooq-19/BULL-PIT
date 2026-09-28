@@ -53,8 +53,9 @@ class PromptTooLarge(BullPitError):
 
 
 class LLMUnavailable(BullPitError):
-    """The LLM provider kept timing out or refusing connections through
-    every retry (used from M2).
+    """The LLM provider can't serve the call: it kept failing transiently
+    through every retry, or rejected the request outright (e.g. a bad key)
+    (used from M2).
     """
 
 

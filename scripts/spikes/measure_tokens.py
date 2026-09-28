@@ -22,7 +22,7 @@ from _common import section
 from _common import settings as base_settings
 from pydantic import BaseModel
 
-from bullpit.journal.db import make_engine, make_sessions
+from bullpit.journal.db import journal_url, make_engine, make_sessions
 from bullpit.journal.models import Base
 from bullpit.llm.gateway import Role, call_llm
 
@@ -59,7 +59,7 @@ def main() -> None:
             print("GROQ_API_KEY is not set. Aborting.")
             raise SystemExit(1)
 
-        engine = make_engine(f"sqlite:///{settings.journal_db_path}")
+        engine = make_engine(journal_url(settings))
         Base.metadata.create_all(engine)
         sessions = make_sessions(engine)
 
