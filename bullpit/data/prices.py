@@ -43,6 +43,7 @@ class PriceHistory:
     as_of: date
     source: Literal["yfinance", "alpaca"]
     bars: pd.DataFrame
+    splits: list[tuple[date, float]]  # (ex-date, ratio new/old); ex-date <= as_of, in window
 
 
 @dataclass(frozen=True)
@@ -216,9 +217,14 @@ def get_prices(symbol: str, as_of: date, sessions: int, *, settings: Settings) -
     source: Literal["yfinance", "alpaca"] = (
         "alpaca" if bool((adjusted["source"] == "alpaca").any()) else "yfinance"
     )
+    split_rows = adjusted.loc[adjusted["split_ratio"] != 1.0, ["date", "split_ratio"]]
+    splits = [
+        (cast(pd.Timestamp, ts).date(), float(ratio))
+        for ts, ratio in zip(split_rows["date"], split_rows["split_ratio"], strict=True)
+    ]
     bars = adjusted.set_index("date")[["open", "high", "low", "close", "volume"]]
     logger.info("price_source", symbol=symbol, as_of=str(as_of), source=source)
-    return PriceHistory(symbol=symbol, as_of=as_of, source=source, bars=bars)
+    return PriceHistory(symbol=symbol, as_of=as_of, source=source, bars=bars, splits=splits)
 
 
 def get_market_context(as_of: date, sessions: int, *, settings: Settings) -> MarketContextData:
