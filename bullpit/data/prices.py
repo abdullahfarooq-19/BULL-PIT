@@ -80,8 +80,11 @@ def _raw_from_yfinance(history: pd.DataFrame, splits: pd.Series) -> pd.DataFrame
         return pd.DataFrame(columns=_RAW_COLUMNS)
 
     dates = cast(pd.DatetimeIndex, history.index).tz_localize(None).normalize()
-    split_dates = cast(pd.DatetimeIndex, splits.index).tz_localize(None).normalize()
-    split_by_date = pd.Series(splits.to_numpy(dtype=float), index=split_dates)
+    if splits.empty:
+        split_by_date: pd.Series = pd.Series(dtype=float, index=pd.DatetimeIndex([]))
+    else:
+        split_dates = cast(pd.DatetimeIndex, splits.index).tz_localize(None).normalize()
+        split_by_date = pd.Series(splits.to_numpy(dtype=float), index=split_dates)
 
     frame = pd.DataFrame(
         {
