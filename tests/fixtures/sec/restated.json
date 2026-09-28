@@ -1,0 +1,38 @@
+{
+  "cik": 1,
+  "entityName": "Restated Test Co",
+  "facts": {
+    "us-gaap": {
+      "Revenues": {
+        "label": "Revenues",
+        "description": "Test fixture for M1-AC-3: a fact filed after its period end, later restated.",
+        "units": {
+          "USD": [
+            {
+              "start": "2024-01-01",
+              "end": "2024-03-30",
+              "val": 100,
+              "accn": "0001-01",
+              "fy": 2024,
+              "fp": "Q1",
+              "form": "10-Q",
+              "filed": "2024-05-03",
+              "frame": "CY2024Q1"
+            },
+            {
+              "start": "2024-01-01",
+              "end": "2024-03-30",
+              "val": 105,
+              "accn": "0001-02",
+              "fy": 2024,
+              "fp": "Q1",
+              "form": "10-Q/A",
+              "filed": "2024-08-01",
+              "frame": "CY2024Q1"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

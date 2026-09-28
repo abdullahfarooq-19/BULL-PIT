@@ -1,0 +1,110 @@
+[project]
+name = "bullpit"
+version = "0.1.0"
+description = "Bull Pit: a multi-agent AI stock research and paper-trading system"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { text = "Proprietary" }
+authors = [{ name = "Abdullah Farooq" }]
+dependencies = [
+    "pydantic>=2.9",
+    "pydantic-settings>=2.5",
+    "structlog>=24.4",
+    "typer>=0.12",
+    "httpx>=0.27",
+    "alpaca-py>=0.30",
+    "litellm>=1.50",
+    "yfinance>=0.2.43",
+    "pandas>=3.0.6",
+    "pyarrow>=25.0.1",
+    "pandas-market-calendars>=5.4.0",
+]
+
+[project.scripts]
+bullpit = "bullpit.cli:app"
+
+[dependency-groups]
+dev = [
+    "ruff>=0.7",
+    "mypy>=1.12",
+    "pytest>=8.3",
+    "pytest-socket>=0.7",
+    "pre-commit>=4.0",
+    "hypothesis>=6.168.3",
+    "pandas-stubs>=3.0.5.260914",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["bullpit"]
+
+# ---------------------------------------------------------------------------
+# ruff: lint + format
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+extend-exclude = ["scripts/spikes/output", "docs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "SIM", "DTZ", "S", "RUF", "TID"]
+# S101 (assert) is fine in tests; scripts/spikes are throwaway and exempt from
+# the wall-clock ban (see per-file-ignores below and dev-plan D-M0-13).
+ignore = []
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S106"]
+"scripts/spikes/**" = ["S101", "DTZ001", "DTZ005", "DTZ006", "TID251"]
+"bullpit/clock.py" = ["TID251"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"datetime.datetime.now".msg = "Use the injected Clock (bullpit/clock.py), not datetime.now()."
+"datetime.datetime.utcnow".msg = "Use the injected Clock (bullpit/clock.py), not datetime.utcnow()."
+"datetime.datetime.today".msg = "Use the injected Clock (bullpit/clock.py), not datetime.today()."
+"datetime.date.today".msg = "Use the injected Clock (bullpit/clock.py), not date.today()."
+"pandas.Timestamp.now".msg = "Use the injected Clock (bullpit/clock.py), not pandas.Timestamp.now()."
+"pandas.Timestamp.today".msg = "Use the injected Clock (bullpit/clock.py), not pandas.Timestamp.today()."
+
+[tool.ruff.format]
+quote-style = "double"
+
+# ---------------------------------------------------------------------------
+# mypy
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.12"
+plugins = ["pydantic.mypy"]
+warn_unused_ignores = true
+warn_redundant_casts = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["bullpit.risk.*", "bullpit.data.*", "bullpit.broker.*", "bullpit.tools.*", "bullpit.eval.*"]
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["yfinance.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["pandas_market_calendars.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["pyarrow.*"]
+ignore_missing_imports = true
+
+# ---------------------------------------------------------------------------
+# pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers -m 'not live' --allow-hosts=127.0.0.1,::1"
+markers = [
+    "live: talks to real external services; opt-in only, never run in CI",
+]

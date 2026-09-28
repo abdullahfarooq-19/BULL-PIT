@@ -35,6 +35,20 @@ If code and docs disagree, the docs win until the owner approves a change. Any c
 - **LLM calls go through `bullpit/llm/gateway.py` only.** Models are pinned: `openai/gpt-oss-20b` (small) and `openai/gpt-oss-120b` (large) on Groq. The free tier caps each call at about 8K tokens including reasoning, so keep prompts compact.
 - **Backtest window starts 2024-07-01 or later** (models' June 2024 training cutoff).
 
+## Code quality: write it like a professional
+
+Write the least code that meets the approved spec. The goal is a small, clean codebase, not a big one.
+
+- **No speculative code.** No features, options, parameters, abstractions or "for later" hooks that the current task doesn't need. Three similar lines are better than a helper written too early.
+- **No extra files.** Create a file only when the approved layout (`dev-plan.md` §2.3 or the milestone plan) calls for it. Put code in the module that owns that job. No `utils.py`, `helpers.py`, `common.py`, one-function modules, or empty placeholder files.
+- **No clutter in the repo.** No scratch, demo, example, backup, `_old` or `_v2` files, and no summary or notes Markdown unless asked. Throwaway work goes in the session scratchpad and is deleted. Spikes live only in `scripts/spikes/`.
+- **No dead code.** No commented-out code, unused imports, `pass` stubs, debug prints, or TODOs without a task ID.
+- **One place for each fact.** Don't copy a constant, mapping or piece of logic; import it from the module that owns it.
+- **Dependencies point inward.** Pure core (`tools/`, `risk/`, `eval/` math) never imports I/O, the CLI, the API or `doctor`. I/O stays in `data/`, `llm/`, `broker/`, `journal/`, `api/`.
+- **Short comments and docstrings.** Explain *why* or a contract that isn't obvious. Don't narrate the code or restate the docs; link to them.
+- **No new dependency** unless the approved plan names it and says why.
+- **Before marking a task done,** re-read the diff and delete anything the task doesn't need.
+
 ## Testing policy: necessary testing only
 
 Full policy: `dev-plan.md` §7. In short:

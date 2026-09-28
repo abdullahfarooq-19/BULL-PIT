@@ -2,8 +2,9 @@
 
 | | |
 |---|---|
-| **Status** | Revision 3: all decisions resolved; ready for M0 |
+| **Status** | Revision 4: all decisions resolved; M0 in progress |
 | **Date** | 2026-09-28 |
+| **Changes in revision 4** | Scope review of M1–M9 ([§10.1](#101-scope-review-revision-4)): work that doesn't change the architecture cut or simplified (C1–C13); token measurement, the pinned-model guard and the loss-warning wiring moved to the milestones that can actually do them (C14–C16). `architecture.md` unchanged |
 | **Changes in revision 3** | Testing cut to what's necessary (§7 rewritten; CI on Ubuntu only; coverage targets, contract and golden tests removed); Q8a, Q10a, Q11 decided; D8 reviewed and kept |
 | **Changes in revision 2** | Owner decisions recorded (§10); D1–D7 approved; D8 and D9 added (§3); `pandas_market_calendars` chosen (D2); S/M milestones use a combined `specs-plan.md` (§1.2); model swap to gpt-oss reflected in M0, M2, M6, M7 and the risks |
 | **Source of truth** | [`docs/architecture.md`](architecture.md) |
@@ -170,7 +171,6 @@ bull-pit/
 ├── web/
 ├── tests/
 │   ├── …                   test files mirror the package (tests/risk/, tests/data/, …)
-│   ├── live/               ➕ (a few opt-in scripts against real services; never in CI)
 │   └── fixtures/           ➕ (recorded API responses, small Parquet samples)
 ├── docs/
 │   ├── architecture.md
@@ -313,11 +313,11 @@ Each milestone below states the goal, scope, deliverables, **draft acceptance cr
 - M1-AC-1: For every data tool, with `as_of` = 2024-06-07 (and a property test over random `as_of` dates), no returned row is dated after `as_of`.
 - M1-AC-2: A row after `as_of` injected into a source response (or the cache) is dropped and logged, never returned.
 - M1-AC-3: SEC facts filed after `as_of` are excluded even when their fiscal period ends before `as_of` (the architecture's "1 April report filed 5 May" example).
-- M1-AC-4: A second fetch of the same data makes no network call (cache hit, proven with a mocked transport).
-- M1-AC-5: If yfinance fails, prices come from the Alpaca backup, and the source used is recorded.
+- M1-AC-4: A second fetch of the same data makes no network call (cache hit; checked by hand from the logs, no dedicated test, C12).
+- M1-AC-5: If yfinance fails, prices come from the Alpaca backup, and the source used is recorded (checked by hand by forcing a yfinance failure, no dedicated test, C12).
 - M1-AC-6: The calendar handles weekends, US market holidays and early closes correctly on a set of known dates (for example Good Friday 2024, Thanksgiving 2024).
-- M1-AC-7: SEC requests send the configured User-Agent and never go above the rate limit (tested with a fake clock).
-- M1-AC-8: The default test suite makes no network calls (recorded fixtures only). Live source tests are opt-in (`-m live`).
+- M1-AC-7: SEC requests send the configured User-Agent and are paced to at most the configured rate (checked by hand from the logs, no dedicated test, C12).
+- M1-AC-8: The default test suite makes no network calls (recorded fixtures only; enforced by `pytest-socket`, set up in M0).
 
 **Risks:** yfinance breaking or throttling (mitigated by the cache, the backup source and recorded fixtures); adjusted prices changing over time (ADR); SEC XBRL oddities (left to M3's tag mapping).
 
@@ -337,13 +337,12 @@ Each milestone below states the goal, scope, deliverables, **draft acceptance cr
   - **Rate limiter** per model (requests and tokens per minute), with exponential backoff and jitter on 429 and transient errors.
   - **Daily budget tracker** per model. When the configured daily token budget is used up, it raises `QuotaExhausted`, which the backtest runner uses in M6 to pause and resume.
   - **Structured output:** reply parsed into a Pydantic schema. If it's invalid, retry once with the validation error in the prompt; if it's still invalid, return the caller's **safe default** and mark the reply as flagged.
-  - **Pinned-model guard:** a run (backtest, or a set of repeat runs) records its models and refuses to continue if the config changed partway through.
 - `llm/prompts/`: prompt templates as versioned files (Jinja2 or plain `.md` with placeholders), with a content hash as the version.
 - `llm/schemas.py`: base signal and evidence schemas (the rest arrive with their agents in M3 and M4).
 - **Journal bootstrap:** `journal/` with SQLAlchemy models, Alembic setup, the `requests` table (minimal) and the `llm_calls` table (model, role, prompt version, input and output tokens, latency, cache hit, cache key, request ID, flagged).
 - Optional Langfuse tracing behind a setting (D7).
 - A **fake LLM provider** for tests: deterministic, scriptable replies, including invalid JSON and 429 errors.
-- Measurement script: run representative prompts against the real models and record actual token counts, which feed the updated budget estimate.
+- Measurement script: run one representative analyst-sized prompt on each pinned model and record the actual tokens, including reasoning tokens, to confirm real calls fit under the per-call ceiling. Each agent's own prompts are measured in the milestone that writes them (M3, M4, M5; C14).
 
 **Draft acceptance criteria**
 
@@ -353,11 +352,10 @@ Each milestone below states the goal, scope, deliverables, **draft acceptance cr
 - M2-AC-4: An invalid JSON reply is retried once with the error included; a second failure returns the safe default and the reply is flagged.
 - M2-AC-5: Every call, including cache hits, writes a row to `llm_calls`.
 - M2-AC-6: Once the daily budget is exceeded, the next call raises `QuotaExhausted` and makes no network call.
-- M2-AC-7: Changing the pinned model in the middle of a run is refused.
-- M2-AC-8: Real token counts (including reasoning tokens) for the analyst, debate, trader, risk and report prompts are measured on the pinned models and recorded, and [architecture §14](architecture.md#14-free-tier-budget) is updated with the measured numbers in the retrospective.
-- M2-AC-9: A call whose estimated size is above the per-call ceiling is refused before any network call, with an error naming the prompt and its estimated size.
+- M2-AC-7: Real token counts (including reasoning tokens) for one representative analyst-sized prompt are measured on both pinned models and recorded in the retrospective.
+- M2-AC-8: A call whose estimated size is above the per-call ceiling is refused before any network call, with an error naming the prompt and its estimated size.
 
-**Risks:** LiteLLM or Groq API changes (pinned versions; gateway tests on the fake provider); reasoning tokens larger than estimated (measured in M2-AC-8; reasoning effort tuned per role); the 8K tokens-per-minute limit forcing prompts to be smaller than the agents need (per-call ceiling makes it visible in development, not in a backtest).
+**Risks:** LiteLLM or Groq API changes (pinned versions; gateway tests on the fake provider); reasoning tokens larger than estimated (measured in M2-AC-7 and again per agent in M3–M5; reasoning effort tuned per role); the 8K tokens-per-minute limit forcing prompts to be smaller than the agents need (per-call ceiling makes it visible in development, not in a backtest).
 
 ---
 
@@ -369,7 +367,7 @@ Each milestone below states the goal, scope, deliverables, **draft acceptance cr
 
 - `state.py`: the shared graph state (Part 0) as typed models: `request_id`, `mode`, `as_of`, `ticker`, `account`, `signals`, `debate`, `recommendation`, `sized_order`, `risk_verdict`, `report`, `approval`, plus `warnings` and `errors`. The fields that later milestones fill are defined now, as optional.
 - `graph.py`: a LangGraph `StateGraph` with the nodes up to the brain's routing. The three analysts run **in parallel** (fan-out, fan-in). The debate branch ends in a stub for now, which gets replaced in M4.
-- `broker/base.py`: the read-only broker protocol (D4). It has `broker/alpaca.py` (read-only methods), and a fake in-memory broker for tests. A `SimBroker` read side can be stubbed now and is completed in M6.
+- `broker/base.py`: the read-only broker protocol (D4). It has `broker/alpaca.py` (read-only methods), and a fake in-memory broker for tests. The simulated broker is built once, in M6 (C1).
 - `request_check.py` (Part 1): asset is tradable, at least about 60 trading days of prices, SEC filings exist (so ETFs are rejected), account snapshot is taken, **duplicate requests refused** (a lock per ticker and mode, held in the journal). Errors come back as clear user-facing messages, and the check happens before any LLM call.
 - `tools/indicators.py` (Part 5): SMA 20 and 50, RSI 14, ATR 14 (Wilder), 20-day volatility annualised with √252, returns over 1 week, 1 month and 3 months.
 - `tools/fundamentals.py` (Part 6): revenue growth year on year, net margin, trailing 4-quarter P/E, **Q4 = annual total − (Q1 + Q2 + Q3)**, XBRL tag mapping list (for example `Revenues`, `RevenueFromContractWithCustomerExcludingAssessedTax`, `SalesRevenueNet`), tested on the chosen stocks.
@@ -385,12 +383,13 @@ Each milestone below states the goal, scope, deliverables, **draft acceptance cr
 - M3-AC-1: For a set of reference tickers (for example AAPL, MSFT, JPM, XOM, JNJ) and several past `as_of` dates after the backtest window start, the command produces three valid signals and a route, with no uncaught error.
 - M3-AC-2: Indicator values match hand-computed values on a small fixture, within tolerance.
 - M3-AC-3: Q4 derivation and tag mapping produce correct revenue for each reference ticker against a hand-checked table.
-- M3-AC-4: An ETF, an unknown ticker, a ticker with too little history, and a duplicate running request are each rejected **before any LLM call**, with the documented message.
+- M3-AC-4: An ETF, an unknown ticker, a ticker with too little history, and a duplicate running request are each rejected **before any LLM call**, with the documented message (checked by hand with `llm_calls`, no dedicated test, C12).
 - M3-AC-5: If one analyst raises, the request continues with a neutral confidence-0 signal and a warning.
 - M3-AC-6: Every evidence ID in the signals is unique, has the right prefix, and is registered on the signals board.
 - M3-AC-7: Weak neutral signals route to "no trade" without any debate LLM calls (checked with `llm_calls` count), and the brain itself never makes an LLM call on either route.
 - M3-AC-8: The three analysts run in parallel in the graph (checked by hand from the logged call timestamps; no dedicated test).
 - M3-AC-9: No data dated after `as_of` reaches any prompt (a guard-sentinel test injects a "future" row and asserts it never appears).
+- M3-AC-10: Real token counts (including reasoning tokens) for each analyst prompt are measured from `llm_calls` and recorded in the retrospective (C14).
 
 **Risks:** SEC data quirks per company (tag mapping plus per-ticker tests); prompt quality (evaluated qualitatively on fixtures; no model tuning); LangGraph parallel-state merge semantics (reducers tested explicitly).
 
@@ -406,7 +405,7 @@ Each milestone below states the goal, scope, deliverables, **draft acceptance cr
 - `agents/trader.py`: reply schema exactly as in architecture Part 10. `target_weight` is clamped to [0, per-stock cap] by code; `decisive_evidence` IDs must exist.
 - `risk/exits.py`: the ATR exit table (tight 1.5/2.25, normal 2/3, wide 3/4.5), keeping reward to risk at 1.5.
 - `risk/sizing.py`: shares = min(target-weight shares, 1%-risk shares, 10%-cap shares **counting existing holdings**, cash shares), floored to whole shares. It records **which limit set the size**.
-- `risk/rules.py`: hard rules (block if 0 shares, if no cash, if the cap is already reached, if ATR or price is invalid); the **loss warning** flag (equity down more than 5% over the last 7 days). The equity history comes from the broker or journal, with a fallback of "unknown" and a warning until M6 and M8.
+- `risk/rules.py`: hard rules (block if 0 shares, if no cash, if the cap is already reached, if ATR or price is invalid); the **loss warning** flag (equity down more than 5% over the last 7 days), written as a pure function over an equity series. No equity history exists yet, so in M4 its input is "unknown" and the report shows a warning; M6 feeds it simulated `equity_snapshots` and M8 live ones (C16).
 - `agents/risk_review.py` (Stage B): approve, shrink or veto with a reason. Code makes sure it can **only shrink** (it never raises size). A veto goes back to the trader, at most 2 times, then the result is "no trade".
 - Graph: debate loop, trader, Stage A, Stage B, veto loop wired as in architecture §5.
 - Journal: `debate_turns`, `recommendations` tables.
@@ -419,7 +418,7 @@ Each milestone below states the goal, scope, deliverables, **draft acceptance cr
 - M4-AC-4: A debate turn citing an ID that doesn't exist is flagged "unsupported" in the transcript and in the journal.
 - M4-AC-5: A Stage B reply that tries to raise size is clamped to the Stage A size, and the event is logged.
 - M4-AC-6: A scripted veto, veto, veto sequence ends in "no trade" after exactly 2 trips back to the trader.
-- M4-AC-7: One full run on a reference ticker produces a `SizedOrder` (or "no trade" with a reason), and the total `llm_calls` for the request is recorded and within the M2-measured budget.
+- M4-AC-7: One full run on a reference ticker produces a `SizedOrder` (or "no trade" with a reason), and the real token counts of the debate, trader and risk-review prompts (from `llm_calls`) are recorded in the retrospective and compared with the [architecture §14](architecture.md#14-free-tier-budget) estimate (C14).
 
 **Risks:** debate turns running over the word limit (caps plus measurement); an LLM that never vetoes, or always does (measured and noted, not tuned in this milestone); rounding at the per-share-risk edge (Decimal plus the property test).
 
@@ -436,9 +435,9 @@ Each milestone below states the goal, scope, deliverables, **draft acceptance cr
 - LLM writing (small model): summary sentence, strongest bull and bear points, what the bull conceded, what's unresolved, "what would change the view". It only gets the numbers it's allowed to use.
 - `report/number_check.py`: pulls every numeric token (integers, decimals, percentages, dollar amounts) out of the LLM text, normalises formatting, and **rejects the text if any number isn't in the allowed set** from the report. It retries once, then falls back to a template sentence built by code.
 - Evidence citations in LLM text must be valid IDs.
-- `report/templates/`: Markdown template (and HTML later for the dashboard).
+- `report/templates/`: the Markdown template. No HTML template: the dashboard (M8) renders the structured report directly (C2).
 - Report is produced for **every** request, including "no trade" and early rejections that reached the graph.
-- Journal: `reports` table (the full structured report plus the rendered Markdown).
+- Journal: `reports` table (the full structured report as JSON; the Markdown is re-rendered from it when needed, so it isn't stored, C3).
 
 **Draft acceptance criteria**
 
@@ -448,6 +447,7 @@ Each milestone below states the goal, scope, deliverables, **draft acceptance cr
 - M5-AC-4: Formatting variants of allowed numbers (`$5,824`, `5824`, `5.8%`) are accepted.
 - M5-AC-5: The architecture's example card (AAPL, 32 shares…) can be reproduced from a fixture state.
 - M5-AC-6: Market context shows SPY above or below its 200-day average and a VIX high/low label with a one-line explanation.
+- M5-AC-7: The full per-request token count (from `llm_calls`) is measured on one buy request and one no-trade request, and [architecture §14](architecture.md#14-free-tier-budget) is updated with the measured numbers in the retrospective (C14).
 
 ---
 
@@ -464,13 +464,14 @@ Each milestone below states the goal, scope, deliverables, **draft acceptance cr
   - Trades still open at the end of the window are valued at the last close and reported separately.
   - One shared simulated account; cash is **reserved** when an order is submitted so several requests on the same Friday can't spend the same cash. Requests on the same Friday are processed in a **deterministic order** (alphabetical by ticker).
 - `approval/gate.py` backtest policy: approve every buy as sized (architecture Part 13).
-- `journal/`: complete schema — `approvals`, `trades`, `equity_snapshots` (daily in backtest), with request lineage on every row.
+- `journal/`: complete schema — `approvals`, `trades`, `equity_snapshots` (daily in backtest), with request lineage on every row. The loss-warning rule from M4 reads its equity series from `equity_snapshots` (C16).
 - `runners/backtest.py`:
   - Inputs: tickers, window, seed, model config, starting cash. The window start is **checked against the pinned models' training cutoffs** and refused if it's earlier. With gpt-oss (June 2024 cutoff), the earliest allowed start is **2024-07-01**. Cutoffs are stored per model in config, not hard-coded in the runner.
+  - **Pinned-model guard** (moved from M2, C15): a run records its model IDs, and `--resume` refuses to continue if the configured models have changed since the run started. M7's repeat runs use the same runner, so they're covered too.
   - For each **last trading day of each week** in the window (normally Friday, earlier when Friday is a holiday), set `as_of` to that day's close and run the graph once per ticker.
-  - **Checkpoint after every simulated week** (runner state in the journal; LangGraph checkpointer for requests in progress).
+  - **Checkpoint after every simulated week** (runner state in the journal). A week's journal rows are committed together with its checkpoint, so a crash or `QuotaExhausted` partway through a week leaves no partial rows. On resume the unfinished week is re-run from its start, and the LLM calls it already made come back from the response cache at no cost. No LangGraph checkpointer is needed in backtests; it arrives in M8 for the approval pause (C4).
   - On `QuotaExhausted`: save state, exit cleanly with a "resume" message; `bullpit backtest --resume RUN_ID` continues from exactly the same point.
-  - **Stock selection helper:** a rule that uses only information from the start date (for example the largest company in each of N sectors on the start date), to avoid survivorship bias. The selection is recorded with the run. Tickers whose share price is above the per-stock cap (over $10,000 with $100,000 starting cash) are excluded, since they could never be bought (Q10a).
+  - **Stock selection:** chosen once, before the first full run, with a written rule that uses only information from the start date (for example the largest company in each of N sectors on the start date), to avoid survivorship bias. Tickers whose share price is above the per-stock cap (over $10,000 with $100,000 starting cash) are excluded, since they could never be bought (Q10a). The rule, the data it used and the chosen tickers go in an ADR, and the tickers are recorded with every run. No selection code in the package (C5).
 
 **Draft acceptance criteria**
 
@@ -480,6 +481,7 @@ Each milestone below states the goal, scope, deliverables, **draft acceptance cr
 - M6-AC-4: A backtest killed at a random point (or stopped by `QuotaExhausted`) and then resumed produces **exactly the same** journal as an uninterrupted run with the same seed (the cached LLM replies make this deterministic).
 - M6-AC-5: A window starting before a pinned model's training cutoff is refused.
 - M6-AC-6: A 26-week, 3-stock backtest on the pinned models, starting on or after 2024-07-01, completes (across several resumed sessions if the daily quota runs out), with every table filled in.
+- M6-AC-7: Resuming a run after the configured models have changed is refused (C15).
 
 **Risks:** runtime and quota (one 78-request run is roughly 8–16 days of free quota; develop on fixtures and short windows, cache, resume); subtle sim bias (fixtures for every fill rule, reviewed against the architecture's rules one by one).
 
@@ -500,10 +502,10 @@ Each milestone below states the goal, scope, deliverables, **draft acceptance cr
   Plus buy and hold for each stock over the window, as a market reference.
 - **Fair comparison rule:** same stocks, dates, sizing rules, exit rules and slippage; only the buy decision differs. The rule-based baselines have no trader to choose `target_weight` and `exit_style`, so they use **fixed defaults: `target_weight` = 6%, `exit_style` = normal**, with the other three sizing limits applied as usual (Q8).
 - **Extra variant — Bull Pit (fixed sizing)** (Q8): Bull Pit's own buy / no-trade decisions, but every buy sized with the same fixed 6% / normal defaults as the baselines. Comparing it with the baselines isolates **decision quality**; comparing it with full Bull Pit isolates the value of the trader's **sizing and exit choices**. It reuses the Bull Pit run's decisions (no extra LLM calls), so it costs no quota (Q8a).
-- **Debate impact** needs a counterfactual: the trader's decision **without** the debate (a trader call given only the signals board), logged alongside so "how often the debate changed the decision" can be measured. The extra calls are counted in the cost metrics.
+- **Debate impact** needs a counterfactual: the trader's decision **without** the debate (a trader call given only the signals board), logged alongside so "how often the debate changed the decision" can be measured. It runs on the **headline run only** (seed 1, 26 weeks), not on the repeat seeds, which saves one large-model call per debated request in every repeat run (C7). The extra calls are counted in the cost metrics.
 - **"No trade" value:** for every no-trade week, simulate the trade that *would* have been placed (default sizing and exits) and report its result.
 - Repeat runs (Q11): each LLM approach runs **3 seeds over the same 13-week window**, reported as mean and range; seed 1 is continued to the full 26 weeks as the **headline run**.
-- `eval/report.py`: a results document (Markdown plus charts: equity curves, drawdown, calibration plot) with the architecture's stated **limits** (small sample, approximate fills) always included.
+- `eval/report.py`: a results document (Markdown plus PNG charts made with matplotlib: equity curves, drawdown, calibration plot) with the architecture's stated **limits** (small sample, approximate fills) always included. These charts are made only here; the dashboard (M8) and the README (M9) reuse the same images (C6). Results live in files, not a journal table (C8).
 
 **Draft acceptance criteria**
 
@@ -529,7 +531,7 @@ Each milestone below states the goal, scope, deliverables, **draft acceptance cr
   - **Staleness check:** latest price against the report price; if it moved more than 2%, re-confirm or re-run.
   - **Expiry:** one trading day after the report; expired requests can't be approved.
   - **Loss warning:** equity down more than 5% in 7 days needs an extra confirmation.
-- `runners/fill_check.py`: reads order and leg status from Alpaca and records entries, exits, exit reason (stop, target, manual close, window end) and profit or loss. It **only records**, never changes a trade. It runs on a schedule (APScheduler inside the API process, or a Windows scheduled task; decided in `plan.md`) and whenever the dashboard is opened. It also takes live `equity_snapshots`.
+- `runners/fill_check.py`: reads order and leg status from Alpaca and records entries, exits, exit reason (stop, target, manual close, window end) and profit or loss. It **only records**, never changes a trade. It runs whenever the dashboard is opened and on demand (`bullpit fill-check`, `POST /fill-check`), with no background scheduler; architecture Part 14 allows either (C9). It also takes live `equity_snapshots`, which feed the loss warning (C16).
 - `api/` (FastAPI):
   - `POST /requests` (start; runs in the background because a request takes about a minute), `GET /requests`, `GET /requests/{id}` (status and progress), `GET /requests/{id}/report`, `POST /requests/{id}/approval` (approve with optional lower shares, or reject), `GET /trades`, `GET /equity`, `POST /fill-check`, `GET /backtests`, `GET /backtests/{id}/results`.
   - Binds to **localhost only**, single user, no auth in v1 (hosting is out of scope; see [§10](#10-decisions-log)).
@@ -538,7 +540,8 @@ Each milestone below states the goal, scope, deliverables, **draft acceptance cr
   - **Report and decide:** the 10-section report, editable share count (can only go down), Approve and Reject, staleness and loss-warning confirmations, expiry state.
   - **History:** past requests and their reports.
   - **Trades:** open and closed trades, exit reasons, profit or loss; equity chart.
-  - **Backtests:** runs and M7 results.
+  - **Backtests:** runs, the M7 results table, and the M7 chart images (not rebuilt in Recharts, C6).
+  - Every page is built with its loading, error and empty states and basic accessibility (labels, keyboard use), not in a later pass (C11).
 - Journal: live `approvals` and `trades` flow.
 
 **Draft acceptance criteria**
@@ -562,7 +565,7 @@ Each milestone below states the goal, scope, deliverables, **draft acceptance cr
 
 **In scope**
 
-- Dashboard: accessibility pass, loading and error states, empty states, dark and light themes, responsive layout.
+- Dashboard: fix the issues found while using it after M8 acceptance. No new pages, no themes, no mobile layout: it's a single-user tool on a laptop (C10).
 - `README.md`: what it is, the safety statement (paper only, not financial advice), a quick start (uv, `.env`, `bullpit doctor`, first request), an architecture summary with diagrams, how to run a backtest and evaluation, the results table and its limits, project structure, links to the ADRs and milestone docs.
 - The final M7 results, including the owner's live track record so far (the architecture calls this "your cleanest evidence").
 - Clean-up of dead code and TODOs, a dependency audit, and a final secret scan across the git history.
@@ -602,7 +605,7 @@ Every tunable value from the architecture has a named setting with the architect
 
 ### 6.5 Performance and budget
 
-The target machine is an 8 GB RAM laptop, with no GPU. Token budget per request is tracked against the M2 measurements, and any milestone that raises per-request tokens by more than 20% has to say so in its retrospective.
+The target machine is an 8 GB RAM laptop, with no GPU. Token budget per request is tracked against the measured numbers (M2 for one representative prompt, M3–M5 per agent), and any milestone that raises per-request tokens by more than 20% has to say so in its retrospective.
 
 ### 6.6 Platform
 
@@ -637,7 +640,7 @@ Development happens on Windows 11, which covers Windows in practice. CI runs on 
 
 - Prompt and report quality (read real outputs at milestone acceptance).
 - Dashboard UI (clicked through at M8 and M9 acceptance).
-- Live services (Alpaca paper, Groq, SEC, yfinance): `bullpit doctor` plus the M0 spike, and the M8 end-to-end paper trade. `tests/live` holds a few opt-in scripts, never run in CI.
+- Live services (Alpaca paper, Groq, SEC, yfinance): `bullpit doctor` plus the M0 spike, and the M8 end-to-end paper trade. There is no `tests/live/` folder (C13). The `live` pytest marker from M0 stays available if a milestone plan justifies one opt-in test.
 - Logging, config loading, CLI wiring.
 
 ### 7.4 Rules
@@ -660,7 +663,6 @@ The journal grows one milestone at a time, and each step is one Alembic migratio
 | M4 | `debate_turns`, `recommendations` |
 | M5 | `reports` |
 | M6 | `approvals`, `trades`, `equity_snapshots`, `backtest_runs` ➕ (run config, progress, resume point) |
-| M7 | `eval_runs` ➕ (optional; results may live in files) |
 | M8 | Live columns on `trades` (broker order IDs, leg IDs), and LangGraph checkpoint tables (managed by the checkpointer) |
 
 ➕ = not listed in architecture Part 15; added for resumable backtests and evaluation bookkeeping.
@@ -672,13 +674,13 @@ The journal grows one milestone at a time, and each step is one Alembic migratio
 | Risk | Impact | Likelihood | Mitigation |
 |---|---|---|---|
 | Groq stops serving a pinned gpt-oss model, or lowers its free limits | M2–M7 blocked or reshaped; backtest window moves | Medium | Verified in the M0 spike; models configurable and pinned per run; window start derived from pinned cutoffs; any model change goes back through D9 |
-| The 8K tokens-per-minute limit (free tier) caps the size of a single call, and gpt-oss reasoning tokens count against it | Agent prompts must stay small; a call that is too big can never succeed | High | Compact prompts; per-call ceiling check in the gateway (M2-AC-9); lowest workable reasoning effort; token measurement in M2 |
+| The 8K tokens-per-minute limit (free tier) caps the size of a single call, and gpt-oss reasoning tokens count against it | Agent prompts must stay small; a call that is too big can never succeed | High | Compact prompts; per-call ceiling check in the gateway (M2-AC-8); lowest workable reasoning effort; token measurement in M2 and per agent in M3–M5 |
 | Alpaca bracket legs don't persist overnight with the chosen `time_in_force`, or entry validation rejects exits anchored to the last close | Trades left without exits, or orders rejected | Medium | M0 spike; ADR-0002; exit anchoring ADR in M8; fill check flags any position without active legs |
 | Alpaca free news history thinner than expected | Weaker sentiment signal; backtests have gaps | Medium | M0 spike; neutral confidence-0 fallback already designed; data warning in the report |
 | yfinance breaks or throttles | Data layer failures | Medium | Cache, Alpaca backup, recorded fixtures |
 | LangGraph or LiteLLM API changes | Breakage on upgrade | Medium | Pinned versions; deliberate upgrades with the suite as the gate |
-| Free token quota makes backtests take weeks. Both gpt-oss models have the same 200K daily quota, so the old "develop on the cheap model" trick no longer saves quota. One 26-week, 3-stock run is about 8–16 days; M7's repeat runs multiply that | M6–M7 calendar time | High | Fixture-based development and short debug windows; response cache; resume; skipped debates; M7 repeat-run scope to be sized from M2's measured token counts (see Q11) |
-| Scope creep in the dashboard | M8/M9 overrun | Medium | Pages fixed in M8 specs; polish only in M9 |
+| Free token quota makes backtests take weeks. Both gpt-oss models have the same 200K daily quota, so the old "develop on the cheap model" trick no longer saves quota. One 26-week, 3-stock run is about 8–16 days; M7's repeat runs multiply that | M6–M7 calendar time | High | Fixture-based development and short debug windows; response cache; resume; skipped debates; M7 repeat-run scope to be sized from the measured per-request token counts (M5, see Q11) |
+| Scope creep in the dashboard | M8/M9 overrun | Medium | Pages fixed in M8 specs, each built complete (C11); M9 only fixes issues found in use (C10) |
 | Look-ahead leak through a path nobody thought of (cache, calendar, SEC amendments) | Invalid backtest results | Low–Medium | Guard after the cache, sentinel tests in M3, filing-date filtering, review checklist item for every data change |
 
 ---
@@ -701,10 +703,42 @@ Owner answers recorded on 2026-09-28.
 | Q9 | LLM models | **`openai/gpt-oss-20b` (small) + `openai/gpt-oss-120b` (large), pinned** (D9) | Both free on Groq; published June 2024 cutoff, so the backtest window starts 2024-07-01 or later |
 | Q10 | Starting cash for backtests | **$100,000**, with one caveat | Matches the Alpaca paper default and the architecture's example |
 | Q10a | The caveat | **(1)** The $100,000 applies only to the **simulated backtest account**. Live sizing always reads the real Alpaca paper balance, which may differ (resets, earlier trades). **(2)** Results are reported as **percentages**, so the starting amount doesn't flatter or hide anything. **(3)** With a 10% per-stock cap, one share must cost under $10,000, so the backtest stock-selection rule excludes tickers priced above that (they would always be "no trade") | Keeps backtest and live numbers from being confused, and avoids a dead ticker in the backtest |
-| Q11 | Repeat-run scope for M7, given 200K tokens/day per model | **Repeat runs:** 3 seeds × **13 weeks** × 3 stocks, on the same window, for each LLM approach (gives a fair mean and range). **Headline run:** seed 1 continued to the full **26 weeks**; its first 13 weeks come from the cache, so they cost nothing. The single agent is about one call per request, so it's cheap. Bull Pit (fixed sizing) is free. Estimated total: about 3–5 weeks of free quota, running in the background while M8 is built (M7 and M8 are independent). Revisit only if M2's measured token counts are far off the estimate | Keeps three seeded runs as the architecture requires while fitting the free tier |
+| Q11 | Repeat-run scope for M7, given 200K tokens/day per model | **Repeat runs:** 3 seeds × **13 weeks** × 3 stocks, on the same window, for each LLM approach (gives a fair mean and range). **Headline run:** seed 1 continued to the full **26 weeks**; its first 13 weeks come from the cache, so they cost nothing. The single agent is about one call per request, so it's cheap. Bull Pit (fixed sizing) is free. Estimated total: about 3–5 weeks of free quota, running in the background while M8 is built (M7 and M8 are independent). Revisit only if the measured per-request token counts (M5-AC-7) are far off the estimate | Keeps three seeded runs as the architecture requires while fitting the free tier |
 | — | Revert D8? (owner asked to revert only if the original was better) | **D8 kept: brain routing stays in code** | Debate-or-skip is a threshold decision: code gives the same answer every time, is easy to test, and saves an LLM call on every request, which matters with the 8K tokens-per-minute limit. The original design already limited the LLM to choosing between fixed routes, so it added cost without adding judgment |
 
 Nothing is open. Q3 and Q4 are owner actions needed before M0 implementation starts (not before M0 docs).
+
+### 10.1 Scope review (revision 4)
+
+On 2026-09-28 the owner asked for work in M1–M9 that costs development time without serving the architecture to be cut, and for sequencing problems to be fixed, with Claude deciding which changes are safe. None of these change the system's behaviour, so `architecture.md` is unchanged and none of them is a deviation in §3. Each one is referenced by its ID in the milestone text above.
+
+**Cut or simplified**
+
+| # | Change | Milestone | Reason |
+|---|---|---|---|
+| C1 | No `SimBroker` stub in M3; the fake in-memory broker covers M3's tests | M3 | The simulated broker would be written twice |
+| C2 | No HTML report template | M5 | The dashboard renders the structured report directly, so the template would never be used |
+| C3 | `reports` stores the structured report only, not the rendered Markdown | M5 | The Markdown is derived data and can be re-rendered at any time |
+| C4 | No LangGraph checkpointer in backtests; a week's journal rows are committed with its checkpoint, and an unfinished week is re-run from its start | M6 | The response cache makes the re-run free and exact. The checkpointer is still used in M8 for the approval pause |
+| C5 | Backtest stocks chosen once with a written start-date rule, recorded in an ADR; no selection code | M6 | Finding point-in-time market caps in code is a data project of its own, just to pick 3 stocks. The architecture's requirement (a rule using only start-date information) is still met |
+| C6 | Charts made once, as PNGs in M7; the dashboard and README reuse them | M7, M8 | Charts would otherwise be built twice (matplotlib and Recharts). Recharts stays for the live equity chart |
+| C7 | Debate-impact counterfactual only on the headline run | M7 | Still measures how often the debate changes the decision, without one extra large-model call per debated request in every repeat run |
+| C8 | No `eval_runs` table | M7 | Results live in files; the table was already optional |
+| C9 | No fill-check scheduler; the fill check runs when the dashboard opens and on demand | M8 | Architecture Part 14 allows either "on a schedule or when you open the dashboard" |
+| C10 | No dark/light themes or mobile layout; M9's dashboard work is fixing issues found in use | M9 | Single-user tool on a laptop, served on localhost only |
+| C11 | Loading, error and empty states and basic accessibility are built with each page in M8 | M8 | A page isn't finished without them, so they don't need a separate pass |
+| C12 | M1-AC-4, M1-AC-5, M1-AC-7 and M3-AC-4 are checked by hand, with no dedicated tests | M1, M3 | A bug in any of them can't lose money or leak the future (§7) |
+| C13 | No `tests/live/` folder; live services are covered by `bullpit doctor`, the M0 spikes and each milestone's hand-checked acceptance | all | There were three overlapping ways of checking live services |
+
+**Moved to the milestone that can do it**
+
+| # | Change | Reason |
+|---|---|---|
+| C14 | M2 measures one representative analyst-sized prompt on both models. Each agent's real prompts are measured where they're written (M3-AC-10, M4-AC-7, M5-AC-7), and architecture §14 is updated with the full per-request numbers in M5's retrospective | The debate, trader, risk and report prompts don't exist in M2, so measuring them there would mean writing throwaway prompts |
+| C15 | Pinned-model guard moved from M2 (old M2-AC-7) to the M6 backtest runner (M6-AC-7); M2's ACs renumbered | A "run" first exists in M6 |
+| C16 | M4 builds the loss warning as a pure function; M6 feeds it simulated `equity_snapshots` and M8 live ones | No equity history exists in M4 |
+
+**Kept after review:** Langfuse tracing (D7). Cutting it would change architecture §13, and it's a few lines through LiteLLM's built-in callback, switched off by default.
 
 ---
 
