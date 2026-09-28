@@ -23,7 +23,7 @@ Each task is about half a day or less, is one commit when the owner asks for com
 | [x] | M2-T-8 | **Backoff and token bucket.** Step 6's retry loop (specs-plan §11.3) with the injected `sleep`; persistent `RateLimited` → `QuotaExhausted`, persistent `ProviderTransient` → `LLMUnavailable`; step 5's per-model RPM/TPM bucket (`time.monotonic`), plus a fixture that resets the buckets between tests | `bullpit/llm/gateway.py`, `tests/conftest.py`, `tests/llm/test_gateway.py` | FR-7, FR-8; AC-3 | AC-3 tests pass: two 429s then success give two recorded waits, the second longer; 429 on every attempt raises `QuotaExhausted`; no real sleeping (suite time unchanged) | pending |
 | [x] | M2-T-9 | **Daily budget.** Step 4: rolling-24-hour sum over non-cache-hit `llm_calls` rows for the model (specs-plan §11.2), `QuotaExhausted` before any call; a cache hit is still served over budget | `bullpit/llm/gateway.py`, `tests/llm/test_gateway.py` | FR-9; D-M2-3; AC-5, AC-6 | AC-6 tests pass (seeded rows at now: `QuotaExhausted`, provider never called; the same rows 25 h old: call goes through); AC-5 test passes (hit, success and flagged fallback each write exactly one row) | pending |
 | [x] | M2-T-10 | **Langfuse toggle.** Register LiteLLM's Langfuse callback once, on the first `call_llm`, only when `langfuse_enabled`; pass host and keys from `Settings`; `ConfigError` for a missing key or package | `bullpit/llm/gateway.py` | FR-14; D7 | Manual check below: defaults leave `litellm.success_callback` empty; enabled without keys raises `ConfigError` naming the variable | pending |
-| [ ] | M2-T-11 | **Measurement run.** `scripts/spikes/measure_tokens.py` (specs-plan §9.6); run once against real Groq, both pinned models | `scripts/spikes/measure_tokens.py`, this file (evidence) | FR-16; D-M2-10; AC-7 | Output pasted below; neither call flagged; both real totals below `llm_tpm_limit` | pending |
+| [x] | M2-T-11 | **Measurement run.** `scripts/spikes/measure_tokens.py` (specs-plan §9.6); run once against real Groq, both pinned models | `scripts/spikes/measure_tokens.py`, this file (evidence) | FR-16; D-M2-10; AC-7 | Output pasted below; neither call flagged; both real totals below `llm_tpm_limit` | pending |
 | [ ] | M2-T-12 | **Acceptance.** Alembic schema check against `models.py`; ADR-0004 → `Accepted`; README quick start gains `uv run alembic upgrade head`; M0 finding C4 marked answered (pointing to M2-FR-4a); retrospective with the AC-7 numbers compared to architecture §14; then, when the owner asks: push, CI green, merge to `master`, tag `m2` | `docs/adr/0004-llm-response-cache-storage.md`, `README.md`, `docs/milestones/M0-foundations/findings.md`, this file | DoD §1.5; AC-7 | Owner accepts | pending |
 
 ## Traceability
@@ -84,7 +84,24 @@ With default settings, `_maybe_register_langfuse` leaves `litellm.success_callba
 
 ### M2-T-11: token measurement (AC-7)
 
-*(pending)*
+`uv run python scripts/spikes/measure_tokens.py`, one representative analyst-sized
+prompt (`measurement_probe.md`, the technical-analyst-shaped probe from T-4) against
+both pinned models, real Groq calls, journal and cache in a throwaway temp dir:
+
+```
+=== small: openai/gpt-oss-20b ===
+  input=241 output=21 reasoning=59 total=321 latency_ms=687 flagged=False
+
+=== large: openai/gpt-oss-120b ===
+  input=241 output=21 reasoning=55 total=317 latency_ms=483 flagged=False
+
+Done. Both calls within llm_tpm_limit and not flagged.
+```
+
+Neither call flagged; both real totals (321, 317) are far below `llm_tpm_limit` (8000)
+and close to the reasoning-token range M0 found at `low` effort (A4: 9-16 tokens on a
+much shorter prompt) scaled up for a fuller analyst-shaped prompt. `llm_output_allowance_tokens`
+(2000) leaves ample headroom past real reasoning + visible output on both models.
 
 ### M2-T-12: Alembic schema check
 
