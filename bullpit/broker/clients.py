@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from alpaca.data.historical.corporate_actions import CorporateActionsClient
 from alpaca.data.historical.news import NewsClient
 from alpaca.data.historical.stock import StockHistoricalDataClient
 from alpaca.trading.client import TradingClient
@@ -23,10 +24,11 @@ from bullpit.config import Settings
 
 @dataclass(frozen=True)
 class DataClients:
-    """Read-only Alpaca clients. Neither can place or modify an order."""
+    """Read-only Alpaca clients. None of them can place or modify an order."""
 
     news: NewsClient
     stock_history: StockHistoricalDataClient
+    corporate_actions: CorporateActionsClient
 
 
 def make_trading_client(settings: Settings) -> TradingClient:
@@ -60,4 +62,5 @@ def make_data_clients(settings: Settings) -> DataClients:
     return DataClients(
         news=NewsClient(api_key=api_key, secret_key=secret_key),
         stock_history=StockHistoricalDataClient(api_key=api_key, secret_key=secret_key),
+        corporate_actions=CorporateActionsClient(api_key=api_key, secret_key=secret_key),
     )

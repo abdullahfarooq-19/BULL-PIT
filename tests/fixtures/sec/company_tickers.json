@@ -1,0 +1,17 @@
+{
+  "1": {
+    "cik_str": 320193,
+    "ticker": "AAPL",
+    "title": "Apple Inc."
+  },
+  "9": {
+    "cik_str": 1067983,
+    "ticker": "BRK-B",
+    "title": "BERKSHIRE HATHAWAY INC"
+  },
+  "6923": {
+    "cik_str": 884394,
+    "ticker": "SPY",
+    "title": "SPDR S&P 500 ETF TRUST"
+  }
+}
