@@ -30,7 +30,9 @@ _TASKS: dict[tuple[_Side, int], str] = {
 _SAFE_DEFAULT = DebateReply(points=[], concessions=[], conviction=0.0)
 
 
-def _signals_summary(board: SignalsBoard) -> list[dict[str, object]]:
+def signals_summary(board: SignalsBoard) -> list[dict[str, object]]:
+    """Per-analyst direction, confidence and flag; shared with the trader
+    and risk-review prompts (D-M4-11)."""
     return [
         {
             "analyst": analyst,
@@ -42,14 +44,14 @@ def _signals_summary(board: SignalsBoard) -> list[dict[str, object]]:
     ]
 
 
-def _evidence_list(board: SignalsBoard) -> list[dict[str, str]]:
+def evidence_list(board: SignalsBoard) -> list[dict[str, str]]:
     return [
         {"id": item.id, "fact": item.fact}
         for item in sorted(board.evidence.values(), key=lambda item: item.id)
     ]
 
 
-def _transcript_lines(turns: list[DebateTurn]) -> list[str]:
+def transcript_lines(turns: list[DebateTurn]) -> list[str]:
     lines: list[str] = []
     for turn in turns:
         label = f"{turn.side.capitalize()}, round {turn.round}"
@@ -63,6 +65,15 @@ def _transcript_lines(turns: list[DebateTurn]) -> list[str]:
         for concession in turn.concessions:
             lines.append(f"{label} concedes: {concession}")
     return lines
+
+
+def final_conviction(turns: list[DebateTurn], side: _Side) -> float | None:
+    """The side's last turn's conviction (M4-FR-4); `None` if it hasn't
+    spoken yet. Shared with the trader prompt (FR-5)."""
+    for turn in reversed(turns):
+        if turn.side == side:
+            return turn.conviction
+    return None
 
 
 def _check_point(point: DebatePoint, evidence: dict[str, Evidence]) -> CheckedPoint:
@@ -101,9 +112,9 @@ def _turn(
             "round": round_number,
             "board_score": state.board.score,
             "conflict": state.board.conflict,
-            "signals": _signals_summary(state.board),
-            "evidence": _evidence_list(state.board),
-            "transcript": _transcript_lines(state.debate),
+            "signals": signals_summary(state.board),
+            "evidence": evidence_list(state.board),
+            "transcript": transcript_lines(state.debate),
             "max_words": settings.debate_turn_max_words,
         },
         DebateReply,
