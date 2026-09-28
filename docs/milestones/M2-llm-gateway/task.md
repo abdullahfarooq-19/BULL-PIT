@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Not started |
+| **Status** | T-1, T-2 done |
 | **Date** | 2026-09-28 |
 | **Specs and plan** | [`specs-plan.md`](specs-plan.md) (approved 2026-09-28; pre-development corrections in its §7.1) |
 | **Branch** | `m2-llm-gateway`, from `master` |
@@ -13,8 +13,8 @@ Each task is about half a day or less, is one commit when the owner asks for com
 
 | ✓ | ID | Task | Files | Serves | Done when | Commit |
 |---|---|---|---|---|---|---|
-| [ ] | M2-T-1 | **Docs.** Create `m2-llm-gateway` from `master`; commit `specs-plan.md`, this file, and ADR-0004 with status `Proposed` | `docs/milestones/M2-llm-gateway/*`, `docs/adr/0004-llm-response-cache-storage.md` | §16 | Branch exists; docs committed | pending |
-| [ ] | M2-T-2 | **Dependencies, settings, errors.** `uv add sqlalchemy alembic jinja2` (not `langfuse`, D-M2-9); the 14 settings in specs-plan §5.1 in `config.py` and `.env.example`; `PromptTooLarge` and `LLMUnavailable` in `errors.py` | `pyproject.toml`, `uv.lock`, `bullpit/config.py`, `.env.example`, `bullpit/errors.py` | §5.1, §5.5; D-M2-1, D-M2-7, D-M2-9 | `uv sync --locked` succeeds; the four checks are clean; `Settings()` shows every new default; both exceptions are `BullPitError` subclasses | pending |
+| [x] | M2-T-1 | **Docs.** Create `m2-llm-gateway` from `master`; commit `specs-plan.md`, this file, and ADR-0004 with status `Proposed` | `docs/milestones/M2-llm-gateway/*`, `docs/adr/0004-llm-response-cache-storage.md` | §16 | Branch exists; docs committed | `0d72b71` |
+| [x] | M2-T-2 | **Dependencies, settings, errors.** `uv add sqlalchemy alembic jinja2` (not `langfuse`, D-M2-9); the 14 settings in specs-plan §5.1 in `config.py` and `.env.example`; `PromptTooLarge` and `LLMUnavailable` in `errors.py` | `pyproject.toml`, `uv.lock`, `bullpit/config.py`, `.env.example`, `bullpit/errors.py` | §5.1, §5.5; D-M2-1, D-M2-7, D-M2-9 | `uv sync --locked` succeeds; the four checks are clean; `Settings()` shows every new default; both exceptions are `BullPitError` subclasses | pending |
 | [ ] | M2-T-3 | **Journal bootstrap.** `journal/db.py` (`make_engine`, `make_sessions`, `journal_url`; WAL and foreign-keys pragmas); `journal/models.py` (`Base`, `Request`, `LLMCall`, with the `(model, created_at)` index); `alembic.ini`, `migrations/env.py`, `script.py.mako`, revision `0001_requests_llm_calls`; mypy exclude for `bullpit/journal/migrations/` | `bullpit/journal/db.py`, `bullpit/journal/models.py`, `bullpit/journal/migrations/**`, `alembic.ini`, `pyproject.toml`, `tests/journal/__init__.py`, `tests/journal/test_db.py` | FR-12, FR-13; §9.5, §10; D-M2-5 | `test_db.py` passes (insert and read back one `Request` and one `LLMCall` in memory); `uv run alembic upgrade head` creates both tables in a temp DB (full schema comparison in T-12) | pending |
 | [ ] | M2-T-4 | **Schemas and the measurement prompt.** `llm/schemas.py` (`Evidence`, `Signal`); `llm/prompts/measurement_probe.md` (compact technical-analyst-shaped prompt asking for `direction` and `confidence` as JSON) | `bullpit/llm/schemas.py`, `bullpit/llm/prompts/measurement_probe.md` | FR-3 (template file); §5.3 | The four checks are clean; the template renders with `StrictUndefined` from a Python shell | pending |
 | [ ] | M2-T-5 | **Fake provider.** Implements `CompletionFn`: a queue of `CompletionReply`s or exceptions (`RateLimited`, `ProviderTransient`) returned in order; records every `CompletionRequest`; fails loudly if called more times than scripted | `tests/llm/__init__.py`, `tests/llm/fake_provider.py` | FR-15; D-M2-6 | ruff and mypy clean; exercised by T-6's tests (no test of its own) | pending |

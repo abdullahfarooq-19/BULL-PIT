@@ -46,5 +46,17 @@ class ValidationFailed(BullPitError):
     """An LLM reply failed schema validation after its retry (used from M2)."""
 
 
+class PromptTooLarge(BullPitError):
+    """A rendered prompt's estimated size exceeds the per-minute token limit
+    (used from M2). Raised before any network call.
+    """
+
+
+class LLMUnavailable(BullPitError):
+    """The LLM provider kept timing out or refusing connections through
+    every retry (used from M2).
+    """
+
+
 class BrokerRejected(BullPitError):
     """A broker rejected an order or a request about one (used from M3/M8)."""
