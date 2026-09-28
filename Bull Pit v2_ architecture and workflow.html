@@ -1,0 +1,982 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bull Pit v2: architecture and workflow</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..900&family=Source+Serif+4:opsz,wght@8..60,400;8..60,600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#F2F5F3; --panel:#E7ECE9; --ink:#17212B; --muted:#56636B; --rule:#CFD8D4;
+  --bull:#1C7457; --bull-soft:#DCEEE6; --bear:#A83343; --bear-soft:#F5E1E4;
+  --code-bg:#E3E9E6; --focus:#2F5BD3;
+  --head:"Archivo", "Helvetica Neue", Arial, sans-serif;
+  --body:"Source Serif 4", Georgia, "Times New Roman", serif;
+  --mono:"IBM Plex Mono", ui-monospace, Menlo, Consolas, monospace;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px); padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#111715; --panel:#1A2320; --ink:#E3EAE6; --muted:#9AA8A2; --rule:#2C3834;
+    --bull:#5CC9A0; --bull-soft:#15302A; --bear:#F08A96; --bear-soft:#3A1C22;
+    --code-bg:#1C2622; --focus:#8FB0FF;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#111715; --panel:#1A2320; --ink:#E3EAE6; --muted:#9AA8A2; --rule:#2C3834;
+  --bull:#5CC9A0; --bull-soft:#15302A; --bear:#F08A96; --bear-soft:#3A1C22;
+  --code-bg:#1C2622; --focus:#8FB0FF;
+}
+*,*::before,*::after{box-sizing:border-box}
+html{scroll-padding-top:calc(env(safe-area-inset-top,0px) + 16px);scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){html{scroll-behavior:auto}}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--body);font-size:1.075rem;line-height:1.7;-webkit-font-smoothing:antialiased}
+a{color:var(--ink);text-decoration-color:var(--bull);text-underline-offset:3px}
+a:hover{color:var(--bull)}
+:focus-visible{outline:2px solid var(--focus);outline-offset:3px}
+.skip{position:absolute;left:-999px;top:0;background:var(--ink);color:var(--paper);padding:8px 14px}
+.skip:focus{left:12px;top:12px;z-index:10}
+h1,h2,h3,h4{font-family:var(--head);color:var(--ink);line-height:1.15;margin:0}
+h2{font-size:clamp(1.7rem,3.2vw,2.3rem);font-weight:800;font-stretch:112%;letter-spacing:-0.01em;margin:0 0 .6em}
+h3{font-size:1.28rem;font-weight:700;font-stretch:100%;margin:1.6em 0 .4em}
+h4{font-size:1.02rem;font-weight:700;margin:1.2em 0 .3em}
+p{margin:0 0 1em}
+ul,ol{margin:0 0 1em;padding-left:1.3em}
+li{margin:.25em 0}
+code{font-family:var(--mono);font-size:.88em;background:var(--code-bg);padding:.08em .35em;border-radius:4px}
+pre{font-family:var(--mono);font-size:.86rem;line-height:1.55;background:var(--code-bg);padding:16px 18px;border-radius:8px;overflow-x:auto;margin:0 0 1.2em}
+pre code{background:none;padding:0;font-size:inherit}
+pre.mermaid{background:var(--panel);text-align:center;font-family:var(--head)}
+.hero{padding:clamp(40px,8vw,96px) clamp(20px,5vw,64px) clamp(28px,5vw,56px);max-width:1180px;margin:0 auto}
+.hero h1{font-size:clamp(3.6rem,13vw,9.5rem);font-weight:900;font-stretch:125%;letter-spacing:-0.035em;line-height:.88;margin:0 0 .28em}
+.hero .lede{font-size:clamp(1.15rem,2vw,1.4rem);max-width:40ch;margin:0 0 1.6em;color:var(--ink)}
+.duel{display:grid;grid-template-columns:1fr auto 1fr;gap:0;align-items:stretch;max-width:980px;border-top:1px solid var(--rule);border-bottom:1px solid var(--rule)}
+.duel .side{padding:22px 22px 24px}
+.duel .bull{background:var(--bull-soft)}
+.duel .bear{background:var(--bear-soft);text-align:right}
+.duel .who{font-family:var(--head);font-weight:800;font-stretch:118%;font-size:1.5rem;margin:0 0 .25em}
+.duel .bull .who{color:var(--bull)}
+.duel .bear .who{color:var(--bear)}
+.duel .side p{margin:0;font-size:1rem;color:var(--ink)}
+.duel .judge{display:flex;align-items:center;justify-content:center;padding:0 18px;font-family:var(--head);font-weight:700;font-stretch:80%;font-size:.95rem;color:var(--muted);text-align:center;max-width:150px;line-height:1.25}
+@media (max-width:640px){.duel{grid-template-columns:1fr}.duel .bear{text-align:left}.duel .judge{max-width:none;padding:12px 22px;justify-content:flex-start}}
+.shell{display:grid;grid-template-columns:230px minmax(0,1fr);gap:56px;max-width:1180px;margin:0 auto;padding:0 clamp(20px,5vw,64px) 80px}
+nav.toc{position:sticky;top:calc(env(safe-area-inset-top,0px) + 24px);align-self:start;max-height:calc(100vh - 48px);overflow-y:auto;font-family:var(--head);font-size:.92rem;padding-top:8px}
+nav.toc p{font-weight:800;font-stretch:112%;margin:0 0 .6em}
+nav.toc ol{list-style:none;padding:0;margin:0}
+nav.toc li{margin:0}
+nav.toc a{display:block;padding:5px 0 5px 12px;text-decoration:none;color:var(--muted);border-left:2px solid var(--rule)}
+nav.toc a:hover{color:var(--ink);border-left-color:var(--bull)}
+@media (max-width:1000px){.shell{grid-template-columns:1fr;gap:0}nav.toc{position:static;max-height:none;margin-bottom:32px;border:1px solid var(--rule);border-radius:8px;padding:16px 18px}}
+main{min-width:0;max-width:74ch}
+main > section{padding-top:56px}
+main > section:first-child{padding-top:8px}
+.note{background:var(--panel);border-radius:8px;padding:16px 20px;margin:0 0 1.2em}
+.note strong{font-family:var(--head)}
+.warn{background:var(--bear-soft);border-radius:8px;padding:16px 20px;margin:0 0 1.2em}
+.good{background:var(--bull-soft);border-radius:8px;padding:16px 20px;margin:0 0 1.2em}
+.tablewrap{overflow-x:auto;margin:0 0 1.4em}
+table{border-collapse:collapse;width:100%;font-size:.95rem;line-height:1.5}
+th{font-family:var(--head);font-weight:700;text-align:left;border-bottom:2px solid var(--ink);padding:8px 12px 8px 0;vertical-align:bottom}
+td{border-bottom:1px solid var(--rule);padding:9px 12px 9px 0;vertical-align:top}
+.part{display:grid;grid-template-columns:52px minmax(0,1fr);gap:4px 16px;margin:0 0 8px;padding:26px 0 8px;border-top:1px solid var(--rule)}
+.part .num{font-family:var(--head);font-weight:900;font-stretch:125%;font-size:1.9rem;line-height:1;color:var(--muted)}
+.part h3{margin:0 0 .5em;display:flex;flex-wrap:wrap;align-items:baseline;gap:10px}
+.tag{font-family:var(--head);font-size:.74rem;font-weight:700;letter-spacing:.02em;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.tag.llm{background:var(--ink);color:var(--paper)}
+.tag.code{border:1.5px solid var(--ink);color:var(--ink)}
+.tag.mix{border:1.5px dashed var(--ink);color:var(--ink)}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:.92rem;margin:0 0 1em;align-items:center}
+.out{font-size:.95rem;color:var(--muted)}
+.out strong{color:var(--ink);font-family:var(--head)}
+footer{max-width:1180px;margin:0 auto;padding:24px clamp(20px,5vw,64px) 56px;color:var(--muted);font-size:.92rem;border-top:1px solid var(--rule)}
+.checklist{list-style:none;padding-left:0}
+.checklist li{padding-left:1.6em;position:relative}
+.checklist li::before{content:"";position:absolute;left:0;top:.55em;width:.8em;height:.8em;border:1.5px solid var(--bull);border-radius:3px}
+.flag{display:inline-block;font-family:var(--head);font-size:.8rem;font-weight:700;padding:2px 8px;border-radius:6px;background:var(--bear-soft);color:var(--bear)}
+.okflag{display:inline-block;font-family:var(--head);font-size:.8rem;font-weight:700;padding:2px 8px;border-radius:6px;background:var(--bull-soft);color:var(--bull)}
+.mock{border:1.5px solid var(--rule);border-radius:12px;padding:20px 22px;margin:0 0 1.4em;background:var(--paper)}
+.mock h4{margin-top:0}
+.mock .row{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}
+.btn{font-family:var(--head);font-weight:700;font-size:.92rem;padding:8px 16px;border-radius:8px;border:1.5px solid var(--ink);background:var(--paper);color:var(--ink)}
+.btn.primary{background:var(--bull);border-color:var(--bull);color:var(--paper)}
+</style>
+</head><body>
+<a class="skip" href="#content">Skip to content</a>
+
+<header class="hero">
+  <h1>Bull Pit</h1>
+  <p class="lede">You choose a stock. A team of AI agents studies it, argues both sides, and writes you a report with a clear recommendation. Nothing is traded until you say yes.</p>
+  <div class="duel" aria-label="The core idea: two agents argue, you decide">
+    <div class="side bull">
+      <p class="who">Bull</p>
+      <p>Argues for buying, using evidence the analysts found.</p>
+    </div>
+    <div class="judge">You read the report and decide</div>
+    <div class="side bear">
+      <p class="who">Bear</p>
+      <p>Attacks that evidence and argues against the trade.</p>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+<nav class="toc" aria-label="Contents">
+  <p>Contents</p>
+  <ol>
+    <li><a href="#changes">What changed in v2</a></li>
+    <li><a href="#overview">What it does</a></li>
+    <li><a href="#words">Words you'll need</a></li>
+    <li><a href="#system">System overview</a></li>
+    <li><a href="#workflow">One request, step by step</a></li>
+    <li><a href="#parts">Every part in detail</a></li>
+    <li><a href="#report">The report</a></li>
+    <li><a href="#live">Live mode</a></li>
+    <li><a href="#lifecycle">A trade's life</a></li>
+    <li><a href="#backtest">Backtest mode</a></li>
+    <li><a href="#lookahead">Look-ahead protection</a></li>
+    <li><a href="#eval">Evaluation</a></li>
+    <li><a href="#stack">Tech stack</a></li>
+    <li><a href="#budget">Free-tier budget</a></li>
+    <li><a href="#repo">Project structure</a></li>
+    <li><a href="#roadmap">Build roadmap</a></li>
+    <li><a href="#risks">Risks and fixes</a></li>
+    <li><a href="#interview">Interview talking points</a></li>
+    <li><a href="#summary">Summary</a></li>
+  </ol>
+</nav>
+
+<main id="content">
+
+<section id="changes">
+  <h2>What changed in v2</h2>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Area</th><th>v1</th><th>v2</th></tr></thead>
+    <tbody>
+      <tr><td>Who picks the stock</td><td>The brain agent, every week</td><td>You, whenever you want</td></tr>
+      <tr><td>How it runs</td><td>Scheduled weekly cycle</td><td>On demand, one stock per request</td></tr>
+      <tr><td>Existing holdings</td><td>Managed: reviewed every cycle, sold when needed</td><td>Not managed. Each request is independent and uses the money available in your account</td></tr>
+      <tr><td>Possible actions</td><td>Buy, sell, hold, resize</td><td>Buy or no trade (long only)</td></tr>
+      <tr><td>Approval</td><td>Only large or unusual trades</td><td>Every trade, no matter how small</td></tr>
+      <tr><td>Output</td><td>Trade journal</td><td>A readable report you decide from, plus the journal</td></tr>
+      <tr><td>Closing trades</td><td>Sell decisions in later cycles</td><td>Every buy carries its own stop-loss and take-profit, handled by the broker</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note"><strong>Why exits are attached to every buy.</strong> Without holdings management, nothing would ever sell a position, and a trade that never closes can't be measured. So each buy is placed as a <strong>bracket order</strong>: the entry plus two exit orders (a stop-loss and a take-profit) that the broker handles on its own. The system opens trades and never has to watch them afterwards.</div>
+  <div class="note"><strong>Why the system still looks at the account.</strong> It never manages or sells what you hold, but the risk rules read your cash and any existing position in the chosen stock. Otherwise, picking the same stock three times could quietly put 30% of your money into it.</div>
+</section>
+
+<section id="overview">
+  <h2>What it does</h2>
+  <p>Bull Pit is a multi-agent AI system that works like a small research and trading desk for one stock at a time. Instead of one AI making the call, several specialised agents each do one job and check each other's work.</p>
+  <p>Every request goes through five stages:</p>
+  <ol>
+    <li><strong>You choose a stock.</strong> The system checks it's tradable and reads your available money.</li>
+    <li><strong>Analyse.</strong> Three analyst agents study it at the same time: price trend, business numbers, and recent news.</li>
+    <li><strong>Debate.</strong> A bull agent argues for buying and a bear agent argues against, for two rounds, citing the analysts' evidence.</li>
+    <li><strong>Recommend and check.</strong> A trader agent recommends buy or no trade. Code sizes the trade and sets its exits. A risk manager checks everything and can shrink or veto.</li>
+    <li><strong>Report and ask.</strong> You get a report with the recommendation and the reasons for it. If it says buy, you approve or reject. Only then is an order placed.</li>
+  </ol>
+  <p>The same code runs in two modes:</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Mode</th><th>What "today" means</th><th>Who approves</th><th>Where trades go</th></tr></thead>
+    <tbody>
+      <tr><td>Live</td><td>The latest market close</td><td>You, every time</td><td>Alpaca paper account (fake money, real prices)</td></tr>
+      <tr><td>Backtest</td><td>A simulated past date</td><td>A fixed rule: follow every recommendation</td><td>A simulated broker written in Python</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note"><strong>No real money, ever.</strong> The code refuses to start unless it is connected to Alpaca's paper-trading endpoint. The report is a research tool, not financial advice.</div>
+</section>
+
+<section id="words">
+  <h2>Words you'll need</h2>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Term</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td>Agent</td><td>An LLM given one role and one job, like "technical analyst".</td></tr>
+      <tr><td>Paper trading</td><td>Trading with fake money on a real broker's system, using real market prices.</td></tr>
+      <tr><td>Backtest</td><td>Replaying the past, week by week, to see how the recommendations would have performed.</td></tr>
+      <tr><td>Equity</td><td>Your account's total value: cash plus the current value of everything you hold.</td></tr>
+      <tr><td>Long only</td><td>The system only buys stocks expecting them to rise. It never bets on a fall (short selling).</td></tr>
+      <tr><td>Stop-loss</td><td>An order that sells automatically if the price falls to a set level, limiting the loss.</td></tr>
+      <tr><td>Take-profit</td><td>An order that sells automatically if the price rises to a set level, locking in the gain.</td></tr>
+      <tr><td>Bracket order</td><td>One buy order with a stop-loss and a take-profit attached. When one exit fills, the broker cancels the other.</td></tr>
+      <tr><td>ATR</td><td>Average True Range: the stock's typical daily price movement over the last 14 days. It is used to set exits that suit how jumpy the stock is.</td></tr>
+      <tr><td>Look-ahead bias</td><td>When a test accidentally uses information from after the simulated date. It makes results look better than reality.</td></tr>
+      <tr><td>Point-in-time data</td><td>Data exactly as it was known on a past date.</td></tr>
+      <tr><td>Training cutoff</td><td>The date after which an LLM has seen no data.</td></tr>
+      <tr><td>Signal</td><td>An analyst's verdict: direction, confidence from 0 to 1, and evidence.</td></tr>
+      <tr><td>Slippage</td><td>The gap between the price you expected and the price you actually got.</td></tr>
+      <tr><td>Sharpe ratio</td><td>Return divided by how bumpy the ride was. Higher is better.</td></tr>
+      <tr><td>Maximum drawdown</td><td>The worst fall from a peak to a later low.</td></tr>
+      <tr><td>Profit factor</td><td>Total money won on winning trades divided by total money lost on losing trades. Above 1 means the trades made money overall.</td></tr>
+      <tr><td>Idempotency</td><td>Making an action safe to repeat, so sending the same order twice by accident creates only one order.</td></tr>
+      <tr><td>Checkpointer</td><td>A LangGraph feature that saves the graph's state, so it can pause for your approval and resume later.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="system">
+  <h2>System overview</h2>
+  <p>You start every request from the dashboard. Data flows in through a date guard, the agent graph produces a report, and the graph pauses until you decide. An approved buy goes to whichever broker the current mode uses, and everything is written to the journal.</p>
+<pre class="mermaid">
+flowchart TD
+  YOU["You: pick a stock on the dashboard"] --> VAL["Request check: tradable, data, account"]
+  subgraph SRC["Free external sources"]
+    YF["yfinance: daily prices"]
+    SEC["SEC EDGAR: company filings"]
+    NEWS["Alpaca: news history"]
+  end
+  subgraph DL["Data layer"]
+    GUARD["Date guard: nothing after as_of"]
+    CACHE[("Parquet cache")]
+  end
+  YF --> GUARD
+  SEC --> GUARD
+  NEWS --> GUARD
+  GUARD <--> CACHE
+  VAL --> PIPE["Agent graph in LangGraph: analysts, debate, trader, risk"]
+  GUARD --> PIPE
+  PIPE <--> GW["LLM gateway: LiteLLM, cache, rate limits"]
+  GW <--> LLM["Groq free models"]
+  PIPE --> REP["Report"]
+  REP --> APP["Approval gate: always asks"]
+  APP <--> YOU2["You: approve or reject"]
+  subgraph BRK["Broker adapter, same interface"]
+    ALP["Live: Alpaca paper, bracket orders"]
+    SIM["Backtest: simulated broker"]
+  end
+  APP --> ALP
+  APP --> SIM
+  DB[("Trade journal")]
+  PIPE --> DB
+  ALP --> DB
+  SIM --> DB
+  DB --> EVAL["Evaluation"]
+</pre>
+  <p><strong>One graph, two modes.</strong> Only three pieces are swapped between live and backtest: the clock (<code>as_of</code>), the broker, and who approves. This pattern is called <strong>dependency injection</strong>: the core stays the same and different parts are plugged in. It proves the backtest tests the exact code that runs live.</p>
+</section>
+
+<section id="workflow">
+  <h2>One request, step by step</h2>
+<pre class="mermaid">
+flowchart TD
+  U["You choose a stock"] --> V["Request check, code"]
+  V -- "Not tradable or no data" --> E["Show error, stop"]
+  V -- "OK" --> T["Technical analyst"]
+  V --> F["Fundamentals analyst"]
+  V --> S["Sentiment analyst"]
+  T --> SB["Signals board, code"]
+  F --> SB
+  S --> SB
+  SB --> D{"Brain: is a debate worth it?"}
+  D -- "No, weak signals" --> NT["No trade"]
+  D -- "Yes" --> BU["Bull researcher"]
+  BU --> BE["Bear researcher"]
+  BE -- "Round 2" --> BU
+  BE -- "After 2 rounds" --> TR["Trader: buy or no trade"]
+  TR -- "No trade" --> NT
+  TR -- "Buy" --> RS["Sizing and hard rules, code"]
+  RS -- "Blocked" --> NT
+  RS -- "Pass or resized" --> RL["LLM risk review"]
+  RL -- "Veto, retries left" --> TR
+  RL -- "Veto, no retries left" --> NT
+  RL -- "Approve or shrink" --> R["Report: buy"]
+  NT --> RN["Report: no trade"]
+  R --> A{"You: approve?"}
+  A -- "Reject" --> J[("Journal")]
+  A -- "Approve" --> X["Place bracket order"]
+  X --> J
+  RN --> J
+</pre>
+  <ol>
+    <li><strong>You choose a stock</strong> on the dashboard.</li>
+    <li><strong>Request check.</strong> Code confirms the stock is tradable on Alpaca and has data, then reads your cash, equity, and any existing position in that stock.</li>
+    <li><strong>Three analysts, in parallel.</strong> Each produces a signal with evidence IDs.</li>
+    <li><strong>Signals board.</strong> Code validates and summarises the three signals.</li>
+    <li><strong>Debate or skip.</strong> If every signal is weak, the brain skips the debate and the result is "no trade". Otherwise the bull and bear debate for two rounds.</li>
+    <li><strong>Trader.</strong> Recommends buy or no trade, a target size, and an exit style.</li>
+    <li><strong>Risk manager.</strong> Code calculates the share count, stop-loss, and take-profit, and applies hard rules. Then an LLM reviews it. A veto sends it back to the trader, at most twice.</li>
+    <li><strong>Report.</strong> Always produced, for both "buy" and "no trade".</li>
+    <li><strong>You decide.</strong> A buy waits for your approval every time. You can also lower the share count before approving.</li>
+    <li><strong>Execute and record.</strong> An approved buy is placed as a bracket order. Everything is saved to the journal.</li>
+  </ol>
+</section>
+
+<section id="parts">
+  <h2>Every part in detail</h2>
+  <p>Each part explains what it does, how it works inside, and what it hands to the next part. Numbers such as "10% per trade" are starting values you can tune.</p>
+  <div class="legend">
+    <span><span class="tag llm">LLM</span> an AI agent does the work</span>
+    <span><span class="tag code">Code</span> plain Python, no AI</span>
+    <span><span class="tag mix">Both</span> code and an LLM share the work</span>
+  </div>
+
+  <div class="part"><div class="num">0</div><div>
+    <h3>The backbone: shared state and graph <span class="tag code">Code</span></h3>
+    <p>The system is one LangGraph graph. A <strong>node</strong> is one step, an <strong>edge</strong> is the arrow to the next step, and the <strong>state</strong> is one shared object every node reads and writes.</p>
+    <p>For each request, the state holds:</p>
+    <ul>
+      <li><code>request_id</code>, <code>mode</code> (live or backtest), and <code>as_of</code> (the current date)</li>
+      <li><code>ticker</code>: the stock you chose</li>
+      <li><code>account</code>: cash, equity, and any existing position in this stock (read-only)</li>
+      <li><code>signals</code>, <code>debate</code>, <code>recommendation</code>, <code>sized_order</code>, <code>risk_verdict</code></li>
+      <li><code>report</code> and <code>approval</code></li>
+    </ul>
+    <p class="out"><strong>Hands over:</strong> a state object that flows through every other part.</p>
+  </div></div>
+
+  <div class="part"><div class="num">1</div><div>
+    <h3>Request check <span class="tag code">Code</span></h3>
+    <p>Runs first, before any LLM call, so a bad request costs nothing.</p>
+    <ol>
+      <li><strong>Is the stock tradable?</strong> Alpaca's asset lookup confirms it exists, is active, and can be traded.</li>
+      <li><strong>Is there enough data?</strong> At least about 60 trading days of prices. Company filings are needed for the fundamentals analyst. ETFs have none, so v1 is limited to regular US company stocks.</li>
+      <li><strong>What's in the account?</strong> Cash, equity, and the current value of any position you already hold in this stock. It is read, never changed.</li>
+      <li><strong>Is a request already running for this stock?</strong> Duplicate requests are refused.</li>
+    </ol>
+    <p>If any check fails, you see a clear message, such as "No SEC filings found for this ticker. Try a US company stock."</p>
+    <p class="out"><strong>Hands over:</strong> a validated ticker and account snapshot.</p>
+  </div></div>
+
+  <div class="part"><div class="num">2</div><div>
+    <h3>Data layer and date guard <span class="tag code">Code</span></h3>
+    <p>This is the only door to the outside world. Agents never call yfinance or an API directly. They call tool functions from this layer.</p>
+    <p>Every tool takes an <code>as_of</code> date and protects it twice:</p>
+    <ol>
+      <li><strong>Request filter:</strong> it only asks the source for data up to <code>as_of</code>.</li>
+      <li><strong>Response check:</strong> it drops any row dated after <code>as_of</code> and logs it.</li>
+    </ol>
+    <p>Automated tests prove the guard works, for example: "with <code>as_of</code> = 7 June 2024, no returned row is dated later."</p>
+    <ul>
+      <li><strong>Prices:</strong> daily open, high, low, close, and volume from yfinance, with Alpaca's price data as a backup.</li>
+      <li><strong>Company filings:</strong> SEC EDGAR's free companyfacts JSON. Every number has its <strong>filing date</strong>, which the guard filters on. The SEC asks for a User-Agent header with your email and about 10 requests per second at most, so files are downloaded once and stored.</li>
+      <li><strong>News:</strong> Alpaca's news endpoint (Benzinga articles, history back to 2015), with <code>end = as_of</code>.</li>
+      <li><strong>Market context:</strong> the S&amp;P 500 (SPY) and the VIX volatility index (<code>^VIX</code>) from yfinance, for the report's market section.</li>
+      <li><strong>Cache:</strong> everything is saved as Parquet files on first fetch and read from disk afterwards.</li>
+    </ul>
+    <p class="out"><strong>Hands over:</strong> clean, date-filtered tables to the analyst tools.</p>
+  </div></div>
+
+  <div class="part"><div class="num">3</div><div>
+    <h3>LLM gateway <span class="tag code">Code</span></h3>
+    <p>Every LLM call goes through this one place, built on LiteLLM.</p>
+    <ul>
+      <li><strong>Model routing:</strong> a small model for analysts and the report, a larger one for the debate, trader, and risk review.</li>
+      <li><strong>Response cache:</strong> keyed by model, prompt, temperature, and a run seed. Repeated calls cost zero tokens, and changing the seed forces fresh answers for repeat runs.</li>
+      <li><strong>Rate limiter:</strong> keeps calls under per-minute limits and retries after error 429 with a growing wait (exponential backoff).</li>
+      <li><strong>JSON validation:</strong> Pydantic checks every reply. An invalid reply is retried once with the error message, then replaced by a safe default and flagged.</li>
+      <li><strong>Token logging:</strong> records tokens for every call.</li>
+      <li><strong>Pinned models in backtests:</strong> no switching providers mid-backtest, because a different model has a different training cutoff.</li>
+    </ul>
+    <p class="out"><strong>Hands over:</strong> validated JSON replies to whichever agent called it.</p>
+  </div></div>
+
+  <div class="part"><div class="num">4</div><div>
+    <h3>Brain (orchestrator) <span class="tag mix">Both</span></h3>
+    <p>In v2 you pick the stock, so the brain's job is routing within a request:</p>
+    <ul>
+      <li><strong>Debate or skip.</strong> If all three signals are weak and neutral, it skips the debate and ends with "no trade", saving about five LLM calls.</li>
+      <li><strong>Data warnings.</strong> If an analyst failed or had thin data (for example, no news this week), it adds a warning to the report so you know the recommendation rests on less evidence.</li>
+    </ul>
+    <p>Hard limits stay in code: the brain can only choose between the defined routes.</p>
+    <p class="out"><strong>Hands over:</strong> the route (debate or no trade) and any data warnings.</p>
+  </div></div>
+
+  <div class="part"><div class="num">5</div><div>
+    <h3>Technical analyst <span class="tag mix">Both</span></h3>
+    <p><strong>Code</strong> computes from price bars up to <code>as_of</code>:</p>
+    <ul>
+      <li><strong>SMA 20 and SMA 50:</strong> average closing price over 20 and 50 days, and whether today's price is above them.</li>
+      <li><strong>RSI 14:</strong> a momentum score from 0 to 100. Above 70 is often called "overbought", below 30 "oversold".</li>
+      <li><strong>ATR 14:</strong> the typical daily price range. It is also used later to set the stop-loss and take-profit.</li>
+      <li><strong>Volatility:</strong> standard deviation of daily returns over 20 days × √252, as a yearly figure.</li>
+      <li><strong>Returns</strong> over 1 week, 1 month, and 3 months.</li>
+    </ul>
+    <p><strong>The LLM</strong> sees only this table of numbers and writes a signal. All analysts share this format:</p>
+<pre><code>{
+  "ticker": "AAPL",
+  "analyst": "technical",
+  "direction": "bullish",
+  "confidence": 0.6,
+  "evidence": [
+    {"id": "T1", "fact": "Close 182 is above SMA50 of 170"},
+    {"id": "T2", "fact": "RSI 68, near the overbought zone"}
+  ]
+}</code></pre>
+    <p>The LLM never calculated anything. Code guaranteed the numbers, and the LLM only judged what they mean. The evidence IDs are what the debate must cite.</p>
+    <p class="out"><strong>Hands over:</strong> a technical signal (T-IDs), plus the ATR value for sizing.</p>
+  </div></div>
+
+  <div class="part"><div class="num">6</div><div>
+    <h3>Fundamentals analyst <span class="tag mix">Both</span></h3>
+    <p><strong>Code</strong> uses only SEC facts filed on or before <code>as_of</code> and computes revenue growth (this quarter against the same quarter last year), net profit margin (net income ÷ revenue), and the P/E ratio (price ÷ earnings per share over the last 4 quarters).</p>
+    <ul>
+      <li><strong>The missing Q4:</strong> it's usually only in the annual 10-K report, so code calculates it as the annual total minus Q1 to Q3.</li>
+      <li><strong>Different names for the same number:</strong> revenue can appear under different XBRL tags depending on the company. A mapping list handles this and is tested on your stocks.</li>
+    </ul>
+    <p><strong>The LLM</strong> reads the ratios and writes a signal. The signal is cached by (ticker, latest filing date), since fundamentals only change when a new report is filed.</p>
+    <p class="out"><strong>Hands over:</strong> a fundamentals signal (F-IDs).</p>
+  </div></div>
+
+  <div class="part"><div class="num">7</div><div>
+    <h3>News sentiment analyst <span class="tag mix">Both</span></h3>
+    <p><strong>Code</strong> fetches news from the 7 days before <code>as_of</code>, removes near-duplicates, and keeps about 15 headlines. <strong>The LLM</strong> scores each from −1 to +1 and marks whether it's really about this company. <strong>Code</strong> combines the scores with a relevance-weighted average. No news gives a neutral signal with confidence 0.</p>
+    <p class="out"><strong>Hands over:</strong> a sentiment signal (S-IDs).</p>
+  </div></div>
+
+  <div class="part"><div class="num">8</div><div>
+    <h3>Signals board <span class="tag code">Code</span></h3>
+    <p>Collects and validates the three signals. A failed analyst is replaced by a neutral signal at confidence 0 and flagged, so the request continues. It then computes whether the signals agree and a confidence-weighted score for the brain.</p>
+    <p class="out"><strong>Hands over:</strong> a validated summary plus every evidence ID the debate may cite.</p>
+  </div></div>
+
+  <div class="part"><div class="num">9</div><div>
+    <h3>Bull vs bear debate <span class="tag llm">LLM</span></h3>
+    <p>Both agents get the same signals board. The bull speaks first each round, and each turn is limited to about 150 words.</p>
+    <ol>
+      <li><strong>Round 1:</strong> the bull states its three strongest points; the bear rebuts each and adds counter-evidence.</li>
+      <li><strong>Round 2:</strong> the bull answers the attacks; the bear gives its final response.</li>
+    </ol>
+    <p>Both must cite evidence IDs, never invent numbers, and address the opponent's strongest point. Conceding a point is allowed. <strong>Code check:</strong> a claim citing an ID that doesn't exist is flagged "unsupported".</p>
+    <p><strong>Why the conflict helps:</strong> a single LLM tends to lock onto one story (confirmation bias). A forced opposing case brings risks to the surface, and the report shows you both sides.</p>
+    <p class="out"><strong>Hands over:</strong> the transcript, each side's final conviction, and the points the bull conceded.</p>
+  </div></div>
+
+  <div class="part"><div class="num">10</div><div>
+    <h3>Trader <span class="tag llm">LLM</span></h3>
+    <p>Reads the debate, the signals summary, and the account snapshot, and replies:</p>
+<pre><code>{
+  "ticker": "AAPL",
+  "action": "buy",
+  "target_weight": 0.06,
+  "exit_style": "normal",
+  "confidence": 0.62,
+  "decisive_evidence": ["T1", "F2"],
+  "reasoning": "Trend and margins outweigh the news risk."
+}</code></pre>
+    <ul>
+      <li><code>action</code> is either <code>buy</code> or <code>no_trade</code>.</li>
+      <li><code>target_weight</code> is the suggested size as a percentage of equity. The trader thinks in percentages; code converts to shares.</li>
+      <li><code>exit_style</code> is tight, normal, or wide (see the risk manager). The trader picks a style, never exact prices.</li>
+    </ul>
+    <p class="out"><strong>Hands over:</strong> a recommendation to the risk manager.</p>
+  </div></div>
+
+  <div class="part"><div class="num">11</div><div>
+    <h3>Risk manager <span class="tag mix">Both</span></h3>
+    <h4>Stage A: exits, sizing, and hard rules in code</h4>
+    <p><strong>Exits from ATR.</strong> Each style keeps the same reward-to-risk ratio of 1.5:</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Exit style</th><th>Stop-loss</th><th>Take-profit</th></tr></thead>
+      <tbody>
+        <tr><td>Tight</td><td>Entry − 1.5 × ATR</td><td>Entry + 2.25 × ATR</td></tr>
+        <tr><td>Normal</td><td>Entry − 2 × ATR</td><td>Entry + 3 × ATR</td></tr>
+        <tr><td>Wide</td><td>Entry − 3 × ATR</td><td>Entry + 4.5 × ATR</td></tr>
+      </tbody>
+    </table></div>
+    <p><strong>Share count</strong> is the smallest of four limits:</p>
+    <ol>
+      <li>The trader's target weight.</li>
+      <li><strong>Risk per trade:</strong> if the stop-loss is hit, you lose at most 1% of equity.</li>
+      <li><strong>Per-stock cap:</strong> this stock, including any shares you already hold, stays under 10% of equity.</li>
+      <li><strong>Cash:</strong> never more than your available cash. No borrowing.</li>
+    </ol>
+    <p><strong>Example.</strong> Equity is $100,000 and cash is $96,000. AAPL last closed at $182, and ATR is $4. The trader chose "normal" and 6%.</p>
+    <ul>
+      <li>Stop-loss = 182 − 2 × 4 = <strong>$174</strong>. Take-profit = 182 + 3 × 4 = <strong>$194</strong>. Risk per share = $8.</li>
+      <li>Limit 1, target: 6% of $100,000 = $6,000 → 32 shares.</li>
+      <li>Limit 2, risk: 1% of equity = $1,000 ÷ $8 → 125 shares.</li>
+      <li>Limit 3, cap: 10% = $10,000 → 54 shares (with nothing already held).</li>
+      <li>Limit 4, cash: $96,000 → 527 shares.</li>
+      <li>Final: <strong>32 shares</strong> (about $5,824). If the stop-loss is hit, you lose about $256. If the take-profit is hit, you gain about $384.</li>
+    </ul>
+    <p>This example works because each limit protects against a different danger: the trader's judgment, one bad trade, too much in one stock, and spending money you don't have. The smallest one wins, so all four are always respected.</p>
+    <p><strong>Loss warning:</strong> if equity fell more than 5% in the last 7 days, the report shows a red warning, and approving requires an extra confirmation.</p>
+    <h4>Stage B: LLM review</h4>
+    <p>Runs only if Stage A passes. It looks for things rules can't see, such as a serious bear point the trader ignored, or a size that doesn't match weak confidence. It can approve, shrink, or veto, with a reason. Code makes sure it can only shrink, never enlarge. A veto sends the recommendation back to the trader, at most twice, then the result is "no trade".</p>
+    <p class="out"><strong>Hands over:</strong> a sized order with its stop-loss and take-profit, or "no trade" with the reason.</p>
+  </div></div>
+
+  <div class="part"><div class="num">12</div><div>
+    <h3>Report generator <span class="tag mix">Both</span></h3>
+    <p>Produces the report you decide from (see <a href="#report">The report</a> for the full layout).</p>
+    <ul>
+      <li><strong>Code fills in every number:</strong> prices, signals, share count, dollar amounts, exits, the maximum loss and possible gain, and market context.</li>
+      <li><strong>The LLM writes only the plain-language parts:</strong> a short summary, the strongest point on each side, and what would change the view. It may only refer to numbers already in the report. A code check rejects any new number it tries to add.</li>
+      <li>A report is produced for <strong>every</strong> request, including "no trade", so you always see why.</li>
+    </ul>
+    <p class="out"><strong>Hands over:</strong> the report to the approval gate and the journal.</p>
+  </div></div>
+
+  <div class="part"><div class="num">13</div><div>
+    <h3>Approval gate <span class="tag code">Code</span></h3>
+    <p><strong>Every buy needs your approval, no matter how small.</strong> Nothing is ever traded automatically.</p>
+    <ol>
+      <li>LangGraph's <code>interrupt()</code> pauses the graph, and the checkpointer saves its state.</li>
+      <li>The dashboard shows the report with <strong>Approve</strong> and <strong>Reject</strong> buttons. You may lower the share count first. Raising it is not allowed, and code re-checks the rules on any change.</li>
+      <li><strong>Staleness check:</strong> when you click Approve, code fetches the latest price. If it moved more than 2% since the report, you're told and asked to confirm again or re-run the analysis.</li>
+      <li><strong>Expiry:</strong> an unanswered report expires after one trading day, because its prices are out of date.</li>
+    </ol>
+    <p><strong>In backtest mode</strong> no one can be asked, so a fixed rule applies: every "buy" recommendation is approved as sized. That measures the quality of the recommendations themselves.</p>
+    <p class="out"><strong>Hands over:</strong> an approved order to the broker, or a rejection to the journal.</p>
+  </div></div>
+
+  <div class="part"><div class="num">14</div><div>
+    <h3>Execution: broker adapter <span class="tag code">Code</span></h3>
+    <p>Both brokers are classes with the same functions (<code>get_account</code>, <code>get_position</code>, <code>submit_bracket_order</code>, <code>get_order</code>), so the graph never knows which one it is using.</p>
+    <h4>Alpaca paper broker (live)</h4>
+    <ul>
+      <li>Confirms the endpoint is <code>paper-api.alpaca.markets</code> at startup, and refuses to run otherwise.</li>
+      <li>Places a <strong>bracket order</strong>: a market buy plus a stop-loss and a take-profit. The two exits stay active until one fills, and the broker then cancels the other. Uses whole shares, since advanced order types may not support fractional shares. Check Alpaca's current bracket-order rules while building.</li>
+      <li>Orders placed while the market is closed wait for the next open.</li>
+      <li>Every order has a unique <code>client_order_id</code> built from the request ID, so a retry can't create a duplicate.</li>
+      <li>A <strong>fill-check job</strong> (run on a schedule or when you open the dashboard) reads order status and records entries and exits in the journal. It only records; it never changes a trade.</li>
+    </ul>
+    <h4>Simulated broker (backtest)</h4>
+    <ul>
+      <li>Enters at the <strong>next trading day's open</strong>, worsened by 0.05% slippage.</li>
+      <li>Each later day, it checks that day's low and high. If the low reaches the stop-loss, the trade exits at the stop price. If the high reaches the take-profit, it exits there. If both happen on the same day, it assumes the stop-loss came first. This is the cautious choice, because daily data can't tell the real order.</li>
+      <li>If the price opens past an exit level (a gap), it exits at the open price, which is worse, as it would in reality.</li>
+      <li>Trades still open when the backtest window ends are valued at the last close and reported separately.</li>
+    </ul>
+    <p class="out"><strong>Hands over:</strong> entry and exit fills to the journal.</p>
+  </div></div>
+
+  <div class="part"><div class="num">15</div><div>
+    <h3>Trade journal <span class="tag code">Code</span></h3>
+    <p>A database (SQLite locally, or Supabase's free Postgres tier if hosted).</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Table</th><th>Holds</th></tr></thead>
+      <tbody>
+        <tr><td><code>requests</code></td><td>Ticker, mode, <code>as_of</code>, models used, config, git commit</td></tr>
+        <tr><td><code>signals</code></td><td>The three analyst outputs with evidence</td></tr>
+        <tr><td><code>debate_turns</code></td><td>Every bull and bear turn, with unsupported claims flagged</td></tr>
+        <tr><td><code>recommendations</code></td><td>Trader output, risk verdicts, vetoes, final sized order</td></tr>
+        <tr><td><code>reports</code></td><td>The full report as shown to you</td></tr>
+        <tr><td><code>approvals</code></td><td>Approve or reject, any share changes, timestamps</td></tr>
+        <tr><td><code>trades</code></td><td>Entry, exit, exit reason (stop, target, or window end), profit or loss</td></tr>
+        <tr><td><code>equity_snapshots</code></td><td>Account value over time</td></tr>
+        <tr><td><code>llm_calls</code></td><td>Model, tokens, latency, cache key for every call</td></tr>
+      </tbody>
+    </table></div>
+    <p class="out"><strong>Hands over:</strong> a complete history for the dashboard and the evaluation.</p>
+  </div></div>
+
+  <div class="part"><div class="num">16</div><div>
+    <h3>Evaluation <span class="tag code">Code</span></h3>
+    <p>Reads the journal and compares Bull Pit's recommendations against baselines. The full method is in <a href="#eval">Evaluation</a>.</p>
+    <p class="out"><strong>Hands over:</strong> a results report with metrics, charts, and honest conclusions.</p>
+  </div></div>
+</section>
+
+<section id="report">
+  <h2>The report</h2>
+  <p>The report is what you read before deciding. It is built so you can understand the recommendation in a few seconds, then check every reason behind it.</p>
+  <h3>Sections, in order</h3>
+  <ol>
+    <li><strong>Header:</strong> ticker, company name, report time, and the date of the price data used.</li>
+    <li><strong>Recommendation:</strong> buy or no trade, confidence, and one sentence explaining why.</li>
+    <li><strong>Suggested order</strong> (buy only): shares, dollar amount, percentage of equity, stop-loss, take-profit, the maximum loss if the stop is hit, and the gain if the target is hit.</li>
+    <li><strong>What the analysts found:</strong> the three signals in a table, with their evidence.</li>
+    <li><strong>The debate:</strong> the strongest bull point, the strongest bear point, what the bull conceded, and anything left unresolved.</li>
+    <li><strong>Risk manager:</strong> which limit set the share count, any shrink or veto and its reason, and any warnings.</li>
+    <li><strong>What would change the view:</strong> for example, "a close below $174 invalidates the trend argument."</li>
+    <li><strong>Market context:</strong> whether the S&amp;P 500 is above or below its 200-day average, and whether the VIX is high or low, with one line on what that means.</li>
+    <li><strong>Data notes:</strong> models used, number of news articles, latest filing date, and any data warnings.</li>
+    <li><strong>Actions</strong> (buy only): editable share count, Approve, and Reject.</li>
+  </ol>
+  <h3>Example (made-up numbers)</h3>
+  <div class="mock" role="img" aria-label="Example report card for AAPL recommending a buy of 32 shares">
+    <h4>AAPL, Apple Inc. <span class="okflag">Buy</span></h4>
+    <p style="margin:0 0 .6em"><strong>Confidence 0.62.</strong> The uptrend and strong margins outweigh short-term news risk.</p>
+    <div class="tablewrap"><table>
+      <tbody>
+        <tr><td>Suggested order</td><td>32 shares, about $5,824 (5.8% of equity)</td></tr>
+        <tr><td>Stop-loss</td><td>$174, maximum loss about $256</td></tr>
+        <tr><td>Take-profit</td><td>$194, possible gain about $384</td></tr>
+        <tr><td>Size set by</td><td>Trader's 6% target (smallest of the four limits)</td></tr>
+        <tr><td>Signals</td><td>Technical bullish 0.6, fundamentals neutral 0.4, sentiment bearish 0.5</td></tr>
+        <tr><td>Strongest bull point</td><td>Price is above both averages with steady margins (T1, F2)</td></tr>
+        <tr><td>Strongest bear point</td><td>A regulatory headline could reverse the trend (S1)</td></tr>
+        <tr><td>Would change the view</td><td>A close below $174</td></tr>
+      </tbody>
+    </table></div>
+    <div class="row"><span class="btn">32 shares</span><span class="btn primary">Approve</span><span class="btn">Reject</span></div>
+  </div>
+</section>
+
+<section id="live">
+  <h2>Live mode</h2>
+  <p>Live mode runs whenever you start a request. There is no schedule for decisions. The US market is open 6:30 pm to 1:00 am in Pakistan (7:30 pm to 2:00 am when the US is on winter time). Orders approved while the market is closed wait for the next open.</p>
+<pre class="mermaid">
+sequenceDiagram
+  participant You
+  participant D as Dashboard and API
+  participant G as Agent graph
+  participant A as Alpaca paper
+  participant J as Journal
+  You->>D: Choose a stock
+  D->>G: Start request
+  G->>A: Check the stock and read the account
+  G->>G: Analysts, debate, trader, risk manager
+  G->>J: Save signals, debate, recommendation
+  G->>D: Report ready, graph paused
+  D->>You: Show report
+  You->>D: Approve, optionally with fewer shares
+  D->>A: Latest price for staleness check
+  D->>G: Resume with approval
+  G->>A: Submit bracket order
+  Note over A: Entry fills at the market open, exits wait
+  D->>A: Fill-check job reads order status
+  A->>J: Entry and later exit recorded
+</pre>
+</section>
+
+<section id="lifecycle">
+  <h2>A trade's life</h2>
+  <p>Once you approve, the system never touches the trade again. The broker handles the exits, and the fill-check job only records what happened.</p>
+<pre class="mermaid">
+flowchart TD
+  A["You approve"] --> B["Bracket order placed: buy, stop-loss, take-profit"]
+  B --> C["Buy fills at market open"]
+  C --> D{"Which exit is reached first?"}
+  D -- "Price falls to stop-loss" --> E["Sold at a limited loss"]
+  D -- "Price rises to take-profit" --> F["Sold at the target gain"]
+  E --> G["Broker cancels the other exit"]
+  F --> G
+  G --> H[("Journal: exit reason and profit or loss")]
+</pre>
+  <p>You can still close any position yourself from the Alpaca dashboard at any time. The system simply records it on the next fill check.</p>
+</section>
+
+<section id="backtest">
+  <h2>Backtest mode</h2>
+  <p>Backtest mode asks: "If I had requested a report on this stock every Friday, and followed every recommendation, how would it have gone?"</p>
+<pre class="mermaid">
+flowchart TD
+  W0["You choose stocks and a window after every model's cutoff"] --> W["Next Friday in the window"]
+  W --> SET["Set as_of = that Friday's close"]
+  SET --> RUN["Run the same graph once per chosen stock"]
+  RUN --> POL["Approval rule: follow every buy as sized"]
+  POL --> ENT["Simulated broker enters at next open plus slippage"]
+  ENT --> DAY["Each day: check open trades for stop-loss or take-profit"]
+  DAY --> SAVE["Record equity and checkpoint progress"]
+  SAVE --> Q{"Daily token quota used up?"}
+  Q -- "Yes" --> P["Pause, resume tomorrow"]
+  P --> W
+  Q -- "No" --> MORE{"More weeks left?"}
+  MORE -- "Yes" --> W
+  MORE -- "No" --> END["Value any open trades at last close"]
+  END --> EV["Evaluation report"]
+</pre>
+  <ul>
+    <li><strong>Independent requests:</strong> each Friday is treated as a fresh request, exactly like live mode. Open trades from earlier weeks are never managed; their brackets simply run.</li>
+    <li><strong>Shared account:</strong> all trades draw from one simulated account, so cash and the per-stock cap work as they do live. A request finding too little cash gets a smaller trade or "no trade".</li>
+    <li><strong>Window:</strong> starts after the training cutoff of every model used. The planned Groq Llama models have a December 2023 cutoff, so the window starts in January 2024 or later.</li>
+    <li><strong>Choosing stocks fairly:</strong> pick them with a rule that uses only information from the start date, such as the largest company in each of five sectors on day one. Picking stocks you already know did well is survivorship bias.</li>
+    <li><strong>Resumable:</strong> progress is saved after every simulated week, so free-tier limits pause the run instead of breaking it.</li>
+    <li><strong>Suggested first run:</strong> 3 stocks, weekly, 26 weeks.</li>
+  </ul>
+</section>
+
+<section id="lookahead">
+  <h2>Look-ahead protection</h2>
+  <p>Look-ahead bias lets a test "see the future" and look better than reality. Bull Pit guards against two kinds.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th></th><th>Kind 1: leaky data</th><th>Kind 2: leaky memory</th></tr></thead>
+    <tbody>
+      <tr><td>What it is</td><td>Tools return data dated after <code>as_of</code></td><td>The LLM remembers from training what happened after <code>as_of</code></td></tr>
+      <tr><td>Example</td><td>Using a report on 1 April that was filed on 5 May</td><td>Testing 2023 while the model "knows" a stock rallied that year</td></tr>
+      <tr><td>Fix</td><td>Date guard with tests, SEC filing dates, next-open entries, cautious same-day exit rule</td><td>Only backtest dates after every model's training cutoff</td></tr>
+    </tbody>
+  </table></div>
+  <div class="warn"><strong>Why Kind 2 matters.</strong> Research has shown LLMs can recall historical prices and outcomes from before their training cutoff, and telling them to "ignore the future" does not stop it. A tools-only date guard is not enough.</div>
+  <p>Live requests are automatically free of both kinds, since no model can remember the future. Your live track record is your cleanest evidence.</p>
+</section>
+
+<section id="eval">
+  <h2>Evaluation</h2>
+  <p>The question: <strong>are Bull Pit's recommendations better than a single agent or a simple rule, and at what cost?</strong> An honest "the debate added cost but no clear gain" is still a strong result.</p>
+  <h3>Metrics</h3>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Metric</th><th>How it's calculated</th><th>What it tells you</th></tr></thead>
+    <tbody>
+      <tr><td>Total return</td><td>End equity ÷ start equity − 1</td><td>How much money it made</td></tr>
+      <tr><td>Sharpe ratio</td><td>(Average weekly return ÷ standard deviation of weekly returns) × √52, risk-free rate taken as 0</td><td>Return for the risk taken</td></tr>
+      <tr><td>Maximum drawdown</td><td>Largest (peak − value) ÷ peak over the equity curve</td><td>The most painful fall</td></tr>
+      <tr><td>Win rate</td><td>Share of closed trades that made money</td><td>How often buys worked</td></tr>
+      <tr><td>Profit factor</td><td>Total gains ÷ total losses on closed trades</td><td>Whether wins outweigh losses</td></tr>
+      <tr><td>"No trade" value</td><td>What the same trade would have done on weeks the system said no trade</td><td>Whether saying no avoided losses</td></tr>
+      <tr><td>Calibration (Brier score)</td><td>Average squared gap between confidence and outcome (1 if the trade won, 0 if not); lower is better</td><td>Whether confidence scores are honest</td></tr>
+      <tr><td>Tokens per request</td><td>From the <code>llm_calls</code> table</td><td>What each approach costs</td></tr>
+      <tr><td>Debate impact</td><td>How often the debate changed the trader's decision</td><td>Whether the debate does anything</td></tr>
+    </tbody>
+  </table></div>
+  <h3>Baselines</h3>
+  <p>All baselines use the same stocks, dates, sizing rules, exit rules, and slippage, so only the buy decision differs.</p>
+  <ol>
+    <li><strong>Always buy:</strong> buys every week. It shows whether Bull Pit's "no trade" decisions add value.</li>
+    <li><strong>Moving-average rule (no LLM):</strong> buys only when the price is above its 50-day average.</li>
+    <li><strong>Single agent:</strong> one LLM call sees all three analysts' data and outputs the same recommendation format, using the same model.</li>
+    <li><strong>Bull Pit:</strong> the full multi-agent system.</li>
+  </ol>
+  <p>Plus <strong>buy and hold</strong> for each stock over the window, as a market reference.</p>
+  <p><strong>Repeat runs:</strong> each LLM setup runs at least 3 times with fresh seeds, and results are reported as an average with a range.</p>
+  <div class="note"><strong>Limits to state in the report:</strong> a few stocks over a few months is a small sample, so differences may be luck. Paper and simulated fills approximate real execution.</div>
+</section>
+
+<section id="stack">
+  <h2>Tech stack</h2>
+  <p>Everything is free. Nothing needs a GPU, so it runs on an 8 GB RAM laptop.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Layer</th><th>Tool</th><th>Why this one</th></tr></thead>
+    <tbody>
+      <tr><td>Language</td><td>Python 3.11+</td><td>Every library below is Python</td></tr>
+      <tr><td>Agent orchestration</td><td>LangGraph</td><td>Graph of nodes, parallel analysts, pause for approval (<code>interrupt</code>), saved state (checkpointer)</td></tr>
+      <tr><td>LLM access</td><td>LiteLLM</td><td>One interface for all providers</td></tr>
+      <tr><td>LLM models</td><td>Groq free tier: Llama 3.1 8B Instant (analysts, report), Llama 3.3 70B Versatile (debate, trader, risk)</td><td>Fast, free, known December 2023 cutoff</td></tr>
+      <tr><td>Structured output</td><td>Pydantic v2</td><td>Validates every agent reply</td></tr>
+      <tr><td>Data processing</td><td>pandas, NumPy</td><td>Indicators, ATR, ratios, sizing in plain, testable code</td></tr>
+      <tr><td>Prices and market context</td><td>yfinance (Alpaca market data as backup)</td><td>Free daily history, SPY and VIX</td></tr>
+      <tr><td>Fundamentals</td><td>SEC EDGAR companyfacts via httpx</td><td>Free, with filing dates for point-in-time use</td></tr>
+      <tr><td>News and trading</td><td>alpaca-py (news API, paper trading, bracket orders)</td><td>Free historical news and a fake-money account</td></tr>
+      <tr><td>Data cache</td><td>Parquet (pyarrow)</td><td>Fast, repeatable runs</td></tr>
+      <tr><td>Database</td><td>SQLite locally; Supabase Postgres (free) if hosted</td><td>Journal and LangGraph checkpoints</td></tr>
+      <tr><td>Backend API</td><td>FastAPI</td><td>Start requests, serve reports, receive approvals</td></tr>
+      <tr><td>Dashboard</td><td>Next.js with Recharts</td><td>Pick a stock, read reports, approve, view trades and results</td></tr>
+      <tr><td>Tracing</td><td>Langfuse (free tier or self-hosted)</td><td>See every agent call and its tokens</td></tr>
+      <tr><td>Testing</td><td>pytest</td><td>Date guard, indicators, sizing, rules, simulated exits</td></tr>
+      <tr><td>CI</td><td>GitHub Actions</td><td>Runs tests on every push</td></tr>
+      <tr><td>Secrets</td><td>python-dotenv, <code>.env</code> in <code>.gitignore</code></td><td>Keeps API keys out of the public repo</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="budget">
+  <h2>Free-tier budget</h2>
+  <p>At the time of writing, Groq's free tier allows roughly 100K tokens per day on Llama 3.3 70B and roughly 500K per day on Llama 3.1 8B. Check Groq's rate-limit page before relying on these, since they change.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Step</th><th>Calls</th><th>Model</th><th>Rough tokens</th></tr></thead>
+    <tbody>
+      <tr><td>Analysts</td><td>3 (often 2, fundamentals cached)</td><td>8B</td><td>~5K</td></tr>
+      <tr><td>Debate</td><td>4</td><td>70B</td><td>~12K</td></tr>
+      <tr><td>Trader and risk review</td><td>2 or more</td><td>70B</td><td>~6–10K</td></tr>
+      <tr><td>Report text</td><td>1</td><td>8B</td><td>~3K</td></tr>
+      <tr><td>Total per request</td><td>~10</td><td></td><td>~25–30K</td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li><strong>Live:</strong> about 3 to 5 full requests per day fit in the 70B quota. That's plenty for personal use.</li>
+    <li><strong>Backtest:</strong> 3 stocks × 26 weeks is about 78 requests, which could take around two weeks of 70B quota. Build and debug on the 8B model, do repeat runs on 8B, and do one headline run on 70B.</li>
+    <li>Skipping weak debates, caching fundamentals, short JSON outputs, and 150-word debate turns all reduce usage.</li>
+    <li>These are estimates. Measure real token counts early and re-plan.</li>
+  </ul>
+</section>
+
+<section id="repo">
+  <h2>Project structure</h2>
+<pre><code>bull-pit/
+├── bullpit/
+│   ├── config.py            settings, limits, model routing
+│   ├── state.py             the shared graph state
+│   ├── graph.py             builds the LangGraph graph
+│   ├── request_check.py     tradable, data, account snapshot
+│   ├── agents/              brain, technical, fundamentals, sentiment,
+│   │                        bull, bear, trader, risk_review, single_agent
+│   ├── tools/               indicators and ATR, fundamentals math, sentiment averaging
+│   ├── data/                guard, prices, sec, news, market_context, cache
+│   ├── llm/                 gateway, schemas, prompts/
+│   ├── risk/                exits, sizing, rules
+│   ├── report/              builder, number check, templates
+│   ├── approval/            gate, staleness check, expiry
+│   ├── broker/              base, sim (with bracket exits), alpaca
+│   ├── journal/             database models and queries
+│   ├── eval/                metrics, baselines, results report
+│   └── runners/             request (live), backtest, fill_check
+├── api/                     FastAPI app
+├── web/                     Next.js dashboard
+├── tests/                   guard, indicators, sizing, rules, sim exits
+├── data_cache/              Parquet files (git-ignored)
+├── .env.example             variable names without real keys
+└── README.md                setup, design, results</code></pre>
+</section>
+
+<section id="roadmap">
+  <h2>Build roadmap</h2>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Milestone</th><th>Build</th><th>Done when</th></tr></thead>
+    <tbody>
+      <tr><td>M0</td><td>Alpaca paper account and API keys</td><td>A test order placed from code fills and can be read back</td></tr>
+      <tr><td>M1</td><td>Data layer, date guard, cache</td><td>Tests prove no data after <code>as_of</code> leaks</td></tr>
+      <tr><td>M2</td><td>LLM gateway</td><td>Routing, cache, retries, validation, token logging work; real token counts measured</td></tr>
+      <tr><td>M3</td><td>Request check, three analysts, signals board, brain routing</td><td>Valid signals for any stock on any past date</td></tr>
+      <tr><td>M4</td><td>Debate, trader, risk manager with sizing and exits</td><td>A complete sized recommendation with stop-loss and take-profit</td></tr>
+      <tr><td>M5</td><td>Report generator</td><td>A readable report for both "buy" and "no trade"</td></tr>
+      <tr><td>M6</td><td>Simulated broker with bracket exits, journal, backtest runner</td><td>A resumable 26-week backtest completes on the 8B model</td></tr>
+      <tr><td>M7</td><td>Evaluation and baselines</td><td>A results table for all four approaches, with repeat runs</td></tr>
+      <tr><td>M8</td><td>Live mode: dashboard request, approval, bracket orders, fill check</td><td>One live request is approved, fills, and later exits, all recorded</td></tr>
+      <tr><td>M9</td><td>Dashboard polish and README</td><td>A stranger can understand the system and its results from the repo</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="risks">
+  <h2>Risks and fixes</h2>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Risk</th><th>What could happen</th><th>Fix</th></tr></thead>
+    <tbody>
+      <tr><td>LLM memory leak</td><td>Backtest looks smarter than it is</td><td>Post-cutoff window, pinned models</td></tr>
+      <tr><td>Free quota limits</td><td>Backtests take days</td><td>8B for development, caching, resumable runs</td></tr>
+      <tr><td>Stale report</td><td>You approve at an old price</td><td>2% staleness check and one-day expiry</td></tr>
+      <tr><td>Same stock chosen repeatedly</td><td>Too much money in one stock</td><td>Per-stock cap counts existing shares</td></tr>
+      <tr><td>Trades never close</td><td>Results can't be measured</td><td>Every buy is a bracket order</td></tr>
+      <tr><td>Hallucinated numbers</td><td>Report shows invented facts</td><td>Numbers only from code; evidence ID and number checks</td></tr>
+      <tr><td>Agents agree too fast</td><td>Debate adds nothing</td><td>Evidence-citing rules; measure debate impact</td></tr>
+      <tr><td>yfinance breaks</td><td>No price data</td><td>Parquet cache; Alpaca data as backup</td></tr>
+      <tr><td>SEC tag differences</td><td>Wrong ratios</td><td>Tag mapping list, tested per stock</td></tr>
+      <tr><td>Duplicate orders</td><td>Buying twice after a network error</td><td>Unique <code>client_order_id</code></td></tr>
+      <tr><td>Leaked API keys</td><td>Someone uses your account</td><td><code>.env</code> in <code>.gitignore</code></td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="interview">
+  <h2>Interview talking points</h2>
+  <ul>
+    <li><strong>Justified multi-agent design:</strong> real parallelism (three analysts at once) and real role conflict (bull against bear).</li>
+    <li><strong>Human in the loop by design:</strong> the AI researches and recommends; a person approves every trade, with pause and resume built on LangGraph checkpoints.</li>
+    <li><strong>Code for math, LLMs for judgment:</strong> sizing, exits, and hard rules are code, and the report's numbers can't be invented by an LLM.</li>
+    <li><strong>Professional risk sizing:</strong> share count is the smallest of four limits, including a 1% maximum loss per trade.</li>
+    <li><strong>Two kinds of look-ahead bias handled:</strong> leaky data and leaky model memory.</li>
+    <li><strong>Same code in both modes:</strong> the broker adapter means the backtest tests exactly what runs live.</li>
+    <li><strong>Honest evaluation:</strong> fair baselines with identical exits, repeat runs, calibration, and cost per request.</li>
+  </ul>
+</section>
+
+<section id="summary">
+  <h2>Summary</h2>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Part</th><th>Who does it</th><th>Hands over</th></tr></thead>
+    <tbody>
+      <tr><td>Request check</td><td>Code</td><td>Valid ticker, account snapshot</td></tr>
+      <tr><td>Data layer and date guard</td><td>Code</td><td>Date-filtered data</td></tr>
+      <tr><td>LLM gateway</td><td>Code</td><td>Validated, cached replies</td></tr>
+      <tr><td>Brain</td><td>LLM with code limits</td><td>Debate or no trade; data warnings</td></tr>
+      <tr><td>Technical analyst</td><td>Code math, LLM reading</td><td>Signal (T-IDs) and ATR</td></tr>
+      <tr><td>Fundamentals analyst</td><td>Code math, LLM reading</td><td>Signal (F-IDs)</td></tr>
+      <tr><td>Sentiment analyst</td><td>LLM scoring, code averaging</td><td>Signal (S-IDs)</td></tr>
+      <tr><td>Signals board</td><td>Code</td><td>Validated summary</td></tr>
+      <tr><td>Bull vs bear debate</td><td>Two LLMs, code ID checks</td><td>Transcript, concessions</td></tr>
+      <tr><td>Trader</td><td>LLM</td><td>Buy or no trade, size, exit style</td></tr>
+      <tr><td>Risk manager</td><td>Code sizing and rules, then LLM</td><td>Sized bracket order or no trade</td></tr>
+      <tr><td>Report generator</td><td>Code numbers, LLM wording</td><td>The report you decide from</td></tr>
+      <tr><td>Approval gate</td><td>Code, and you</td><td>Approved order or rejection</td></tr>
+      <tr><td>Broker adapter</td><td>Code</td><td>Entry and exit fills</td></tr>
+      <tr><td>Trade journal</td><td>Database</td><td>Full history</td></tr>
+      <tr><td>Evaluation</td><td>Code</td><td>Metrics against baselines</td></tr>
+    </tbody>
+  </table></div>
+  <h3>Key takeaways</h3>
+  <ul class="checklist">
+    <li>You choose the stock; each request is independent and sized against the money in your account.</li>
+    <li>The system never manages or sells holdings. Every buy carries its own stop-loss and take-profit, handled by the broker.</li>
+    <li>Every trade needs your approval, however small, with a staleness check and a one-day expiry.</li>
+    <li>Every request produces a report, including "no trade", so you always see why.</li>
+    <li>Share count is the smallest of four limits: trader target, 1% risk, 10% per-stock cap, and available cash.</li>
+    <li>Code does all math and every number in the report; LLMs only interpret, argue, and explain.</li>
+    <li>Live trades go to the Alpaca paper account; backtest trades go to the simulated broker, which follows every recommendation.</li>
+    <li>Look-ahead protection covers leaky data (date guard) and leaky memory (post-cutoff window).</li>
+    <li>Evaluation compares Bull Pit with always-buy, a moving-average rule, and a single agent, all using identical exits.</li>
+    <li>Everything is free; the LLM quota is the main constraint, handled with 8B development runs, caching, and resumable backtests.</li>
+  </ul>
+</section>
+
+</main>
+</div>
+
+<footer>
+  Bull Pit v2 architecture and workflow. Paper trading and simulation only; no real money is used. Reports are research, not financial advice.
+</footer>
+
+<!--claude-mermaid-runtime-begin:3477-->
+<style>.mermaid-diagram{margin-block:4px}.mermaid-diagram svg{display:block;margin:0 auto;max-width:100%;height:auto}</style>
+<script src="/_runtime/mermaid-11.16.1.min.js"></script>
+<script>(function(){
+var CFG={"palettes":{"light":{"surface":"#f4efe4","text":"#42392e","line":"#8a7f6d","border":"#7a6c52","bg":"#fffdf8"},"dark":{"surface":"#262b34","text":"#f2f3f5","line":"#a8adb8","border":"#9aa4b8","bg":"#1f232b"}}};
+if(typeof mermaid==='undefined')return;
+var pres=Array.prototype.slice.call(document.querySelectorAll('pre.mermaid')).filter(function(p){if(p.hasAttribute('data-claude-mermaid-claimed'))return false;p.setAttribute('data-claude-mermaid-claimed','1');return true;});
+if(!pres.length)return;
+var mq=window.matchMedia?window.matchMedia('(prefers-color-scheme: dark)'):null;
+var root=document.documentElement;
+var items=pres.map(function(pre){
+var mount=document.createElement('div');mount.className='mermaid-diagram';
+return {pre:pre,mount:mount,src:pre.textContent||''};
+});
+var seq=0;
+var renderGen=0;
+var lastKey='';
+function pageBg(fallback){
+var els=[document.body,document.documentElement];
+for(var i=0;i<els.length;i++){
+var c=els[i]&&getComputedStyle(els[i]).backgroundColor;
+if(c&&c!=='transparent'&&c!=='rgba(0, 0, 0, 0)')return c;
+}
+return fallback;
+}
+function render(){
+var theme=root.getAttribute('data-theme');
+var dark=theme==='dark'||(!!(mq&&mq.matches)&&theme!=='light');
+var pal=dark?CFG.palettes.dark:CFG.palettes.light;
+var bg=pageBg(pal.bg);
+var key=(dark?'d':'l')+'|'+bg;
+if(key===lastKey)return;
+lastKey=key;
+var gen=++renderGen;
+var font=getComputedStyle(document.body).fontFamily||'sans-serif';
+var nat={useMaxWidth:false};
+mermaid.initialize({
+startOnLoad:false,securityLevel:'strict',theme:'base',
+flowchart:nat,sequence:nat,er:nat,state:nat,class:nat,pie:nat,
+gantt:nat,journey:nat,timeline:nat,gitGraph:nat,mindmap:nat,xyChart:nat,
+quadrantChart:nat,sankey:nat,c4:nat,requirement:nat,block:nat,
+packet:nat,kanban:nat,architecture:nat,radar:nat,
+themeVariables:{background:bg,mainBkg:pal.surface,primaryColor:pal.surface,
+primaryTextColor:pal.text,lineColor:pal.line,primaryBorderColor:pal.border,
+nodeBorder:pal.border,clusterBorder:pal.border,edgeLabelBackground:bg,
+clusterBkg:'rgba(127,127,127,0.07)',titleColor:pal.text,
+darkMode:dark,rowOdd:bg,rowEven:'rgba(127,127,127,0.07)',
+attributeBackgroundColorOdd:bg,attributeBackgroundColorEven:'rgba(127,127,127,0.07)',
+fontSize:'16px',fontFamily:font},
+themeCSS:'.node rect, .node circle, .node polygon, .node path, .cluster rect { stroke-width: 2px; }'
+});
+items.forEach(function(it){
+var id='claude-mermaid-'+seq++;
+mermaid.render(id,it.src).then(function(r){
+if(gen!==renderGen)return;
+var prev=it.pre.previousElementSibling;
+if(prev&&prev.className==='mermaid-diagram'&&prev!==it.mount)return;
+it.mount.innerHTML=r.svg;
+if(!it.mount.parentNode)it.pre.parentNode.insertBefore(it.mount,it.pre);
+it.pre.style.display='none';
+},function(){
+var scratch=document.getElementById(id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+scratch=document.getElementById('d'+id);
+if(scratch)scratch.parentNode.removeChild(scratch);
+if(gen!==renderGen)return;
+if(it.mount.parentNode)it.mount.parentNode.removeChild(it.mount);
+it.pre.style.display='';
+});
+});
+}
+render();
+if(mq&&mq.addEventListener)mq.addEventListener('change',render);
+if(typeof MutationObserver!=='undefined')new MutationObserver(render).observe(root,{attributes:true,attributeFilter:['data-theme']});
+})();</script>
+<!--claude-mermaid-runtime-end-->
+</body>
+</html>
