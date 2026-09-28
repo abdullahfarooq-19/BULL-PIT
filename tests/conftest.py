@@ -2,11 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from sqlalchemy.orm import Session, sessionmaker
 
 from bullpit.config import Settings
+from bullpit.journal.db import make_engine, make_sessions
+from bullpit.journal.models import Base
+from bullpit.llm.gateway import reset_langfuse_registration, reset_token_buckets
 
 
 def fixture_path(*parts: str) -> Path:
@@ -25,3 +30,23 @@ def settings(tmp_path: Path) -> Settings:
         groq_api_key="fake-groq-key",
         sec_contact_email="test@example.com",
     )
+
+
+@pytest.fixture
+def sessions() -> sessionmaker[Session]:
+    """An in-memory journal, schema created directly (Alembic is checked by hand, M2 sec9.5)."""
+    engine = make_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    return make_sessions(engine)
+
+
+@pytest.fixture(autouse=True)
+def _reset_llm_gateway_module_state() -> Iterator[None]:
+    """The token buckets and the Langfuse registration latch are module-level
+    (D-M2-3: pacing is per process), so tests must not leak state between runs.
+    """
+    reset_token_buckets()
+    reset_langfuse_registration()
+    yield
+    reset_token_buckets()
+    reset_langfuse_registration()
