@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | Draft, waiting for owner approval. Implementation starts after M0 is accepted and merged (dev-plan §1.4) |
+| **Status** | Accepted by the owner on 2026-09-28. `m1-data-layer` branched from `m0-foundations` rather than `master` — M0 was functionally complete but not yet merged when M1 started; the owner chose to proceed rather than block (see retrospective) |
 | **Date** | 2026-09-28 |
 | **Specs and plan** | [`specs.md`](specs.md) (approved 2026-09-28), [`plan.md`](plan.md) |
-| **Branch** | `m1-data-layer`, from `master` after M0's merge |
+| **Branch** | `m1-data-layer`, from `m0-foundations` |
 
 Each task is about half a day or less, is one commit when the owner asks for commits (CLAUDE.md), and is ticked only when its check passes. After every task: `uv run ruff check .`, `uv run ruff format --check .`, `uv run mypy bullpit` and `uv run pytest` are clean, and the diff has been re-read for anything the task doesn't need.
 
@@ -23,7 +23,7 @@ Each task is about half a day or less, is one commit when the owner asks for com
 | [x] | M1-T-8 | **News.** `news.py` (plan §3.7) | `bullpit/data/news.py`, `tests/data/test_news.py` | FR-14, AC-10 | `test_parses_recorded_news` passes | `e1d8b5b` |
 | [x] | M1-T-9 | **Leak tests across tools.** Leaky fakes for all three tools; the fixed-date test and the hypothesis property test; the cache-file injection test | `tests/data/test_guard.py` | AC-1, AC-2 | All four guard tests pass; the whole suite still runs in under about a minute | `d0f8caa` |
 | [x] | M1-T-10 | **Manual checks against real services.** AC-4, AC-5, AC-7, AC-11 as in plan §9; mark M0 findings C2 and C3 answered (pointing to FR-14 and ADR-0003) | `docs/milestones/M0-foundations/findings.md`, this file | AC-4, 5, 7, 11 | Outputs pasted below; every check as expected | pending |
-| [ ] | M1-T-11 | **Acceptance and retrospective.** Push; CI green (AC-8); walk through AC-1 to AC-11 with the evidence; write the retrospective; after owner acceptance, merge to `master` and tag `m1` | this file | DoD §1.5, AC-8 | Owner accepts | — |
+| [x] | M1-T-11 | **Acceptance and retrospective.** Push; CI green (AC-8); walk through AC-1 to AC-11 with the evidence; write the retrospective; after owner acceptance, merge to `master` and tag `m1` | this file | DoD §1.5, AC-8 | Owner accepts | merge commit on `master`, tag `m1` |
 
 ## Traceability
 
@@ -151,4 +151,52 @@ Every check as expected. M0 findings C2 and C3 marked answered in
 
 ## Retrospective
 
-*(written at acceptance)*
+**Accepted 2026-09-28.** All 11 tasks done; AC-1 through AC-11 verified
+(automated where dev-plan §7 requires it, manual otherwise, evidence
+above). 69 tests, whole suite in ~6s, no network (`pytest-socket`).
+
+**What went well**
+
+- The guard/cache design (one `drop_after` call point, run inside
+  `read_through` on both the fetched piece and the merged result) meant
+  every tool got look-ahead protection "for free" once cache.py was
+  right — prices, SEC and news needed no extra guard logic of their own.
+- The hypothesis property test (AC-1) earned its keep immediately: it
+  found a real crash (`_raw_from_yfinance` on a ticker with no split
+  history — an empty `splits` Series has a `RangeIndex`, not a
+  `DatetimeIndex`) that the fixed-date test and the recorded fixtures
+  never would have hit, since every recorded fixture ticker happens to
+  have split history. Fixed in `d0f8caa`.
+- Point-in-time prices (ADR-0003) checked out exactly against the NVDA
+  fixture on the first real run: 1,208.88 pre-split, 120.888 post-split,
+  yfinance and Alpaca agreeing to the cent.
+
+**What was harder than expected**
+
+- alpaca-py 0.44's typed models don't fully satisfy mypy strict without
+  several `cast()`s (`BarSet | dict`, `CorporateActionsSet | dict`, the
+  corporate-action union types). Not a design problem, just SDK typing
+  gaps; documented inline rather than loosened `pyproject.toml`.
+- Getting the "New York calendar date" cache-freshness rule right
+  (`cache.complete_through`) took a couple of passes to reason through
+  correctly — it's simple once stated as "same NY day as the fetch ⇒
+  still fresh," but easy to get backwards.
+
+**Deviation from the plan, noted for the record**
+
+- `m1-data-layer` branched from `m0-foundations`, not `master`, because
+  M0's own git/acceptance phase (specs-plan §8) was still open when the
+  owner asked to start M1. The owner chose to proceed rather than block
+  on M0's formal close-out. Merging `m1-data-layer` to `master` (this
+  task) therefore brings in all of M0's work in the same merge, and no
+  separate `m0` tag was ever cut. If a standalone `m0` tag matters later,
+  it can still be added retroactively to the right commit in
+  `master`'s history.
+
+**Left for later milestones (by design, per specs §2.2)**
+
+- Request-check business rules ("about 60 trading days," "SEC filings
+  exist"), SPY/VIX derived labels, `next_open` and the other calendar
+  helpers, dividend adjustment, point-in-time ticker changes — all
+  explicitly out of scope here and owned by M3/M5/M6 as noted in
+  specs.md.
