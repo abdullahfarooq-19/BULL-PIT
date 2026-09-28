@@ -5,6 +5,7 @@ the graph long before the dashboard).
 
 from __future__ import annotations
 
+import sys
 from datetime import date
 from pathlib import Path
 from typing import Annotated, Literal, cast
@@ -22,6 +23,13 @@ from bullpit.journal.db import journal_url, make_engine, make_sessions
 from bullpit.logging import configure_logging
 from bullpit.runners.request import run_request
 from bullpit.state import RequestState
+
+# LLM text (M4's debate/report prose) can contain characters outside
+# Windows' legacy console codepage (e.g. U+2011 non-breaking hyphen); print
+# it rather than crash the CLI on a UnicodeEncodeError (found running M4-T-14).
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 
 app = typer.Typer(add_completion=False, help="Bull Pit: research, not financial advice.")
 
