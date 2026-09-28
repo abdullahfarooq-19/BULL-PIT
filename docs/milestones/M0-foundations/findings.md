@@ -55,8 +55,8 @@ Total tokens spent across all Groq spike calls: **1,143** (well under the 10K bu
 | # | For milestone | Question |
 |---|---|---|
 | C1 | M3 | The request check can't use Alpaca's `asset_class` field to reject ETFs (A11) — it already plans to rely on "no SEC filings" instead (dev-plan M3 scope), so `specs.md` should state this explicitly as the reason, not as a fallback |
-| C2 | M1 | News pagination (`page_token`) is needed for any ticker/week with more than 50 Alpaca news articles (A10); `data/news.py`'s design should page through results rather than assume one page is enough |
-| C3 | M1 | yfinance's `auto_adjust` defaults to `True` (A16); the adjustment-policy ADR should say explicitly whether Bull Pit keeps that default or requests unadjusted prices, and why |
+| C2 | M1 | News pagination (`page_token`) is needed for any ticker/week with more than 50 Alpaca news articles (A10); `data/news.py`'s design should page through results rather than assume one page is enough — **Answered:** M1-FR-14; alpaca-py 0.44 already follows `next_page_token` when no `limit` is set, verified live on 2026-09-28 with an AAPL week of 59 articles (M1-T-10, AC-11) |
+| C3 | M1 | yfinance's `auto_adjust` defaults to `True` (A16); the adjustment-policy ADR should say explicitly whether Bull Pit keeps that default or requests unadjusted prices, and why — **Answered:** ADR-0003 (point-in-time prices): raw prices stored, split-adjusted only up to `as_of`, dividends never adjusted |
 | C4 | M2 | A small `max_tokens` cap can silently starve visible content because reasoning tokens are drawn from the same budget (A5); the gateway's per-call ceiling and per-role `max_tokens` must leave headroom past the *measured* reasoning-token cost, not just the visible-answer length |
 
 ## Still pending (Phase 2, market hours)
