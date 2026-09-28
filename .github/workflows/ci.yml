@@ -42,3 +42,8 @@ jobs:
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Pinned to match .pre-commit-config.yaml's gitleaks rev, so CI and
+          # the local pre-commit hook use the same detection rules (M0
+          # spike: the action's default/latest gitleaks missed a fake key
+          # that this pinned version and ruff's S105 rule both caught).
+          GITLEAKS_VERSION: "8.21.2"
