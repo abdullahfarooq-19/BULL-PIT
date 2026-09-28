@@ -15,8 +15,8 @@ import httpx
 
 from bullpit.broker.clients import make_data_clients, make_trading_client
 from bullpit.config import Settings
+from bullpit.data.sec import sec_user_agent
 
-SEC_USER_AGENT_APP = "BullPit/0.1.0"
 GROQ_MODELS_URL = "https://api.groq.com/openai/v1/models"
 SEC_SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK0000320193.json"  # Apple
 
@@ -36,15 +36,6 @@ class CheckResult:
     def line(self) -> str:
         detail = f"    {self.detail}" if self.detail else ""
         return f"{self.name:<15} {self.status.value:<5}{detail}"
-
-
-def sec_user_agent(settings: Settings) -> str:
-    """The User-Agent SEC EDGAR asks for: an app identifier plus a contact email.
-
-    Shared by `doctor` and, from M1, `bullpit/data/sec.py`.
-    """
-    email = settings.sec_contact_email or "unknown@example.com"
-    return f"{SEC_USER_AGENT_APP} {email}"
 
 
 def check_config(settings: Settings) -> CheckResult:
