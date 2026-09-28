@@ -32,4 +32,6 @@ The risk manager rejected your earlier recommendations on this request:
 Adjust your recommendation to address why it was rejected.
 {% endif %}
 
-Reply with a single JSON object: {"action": "buy" | "no_trade", "target_weight": <number from 0 to 1, your suggested size as a fraction of equity>, "exit_style": "tight" | "normal" | "wide", "confidence": <number from 0 to 1>, "decisive_evidence": [<string>, ...], "reasoning": <string>}. JSON only, nothing else.
+"decisive_evidence" must be a list of the fact IDs above that most drove your decision (e.g. ["T1", "F2"]), not sentences -- an entry that isn't one of those IDs is dropped.
+
+Reply with a single JSON object: {"action": "buy" | "no_trade", "target_weight": <number from 0 to 1, your suggested size as a fraction of equity>, "exit_style": "tight" | "normal" | "wide", "confidence": <number from 0 to 1>, "decisive_evidence": ["T1", "F2"], "reasoning": <string>}. JSON only, nothing else.
