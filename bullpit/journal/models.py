@@ -8,8 +8,9 @@ milestones extend `requests` and add their own tables against the same
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import Any
 
-from sqlalchemy import Index
+from sqlalchemy import JSON, ForeignKey, Index, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -18,16 +19,52 @@ class Base(DeclarativeBase):
 
 
 class Request(Base):
-    """One research/trading request. M3 fills in the remaining columns
-    (config snapshot, git commit, status, request lock) (M2 specs-plan sec2.2).
+    """One research/trading request (M2 specs-plan sec2.2; M3-FR-21).
+
+    The partial unique index is the duplicate-request lock (M3-FR-3): at
+    most one `running` row per (ticker, mode).
     """
 
     __tablename__ = "requests"
+    __table_args__ = (
+        Index(
+            "uq_requests_running",
+            "ticker",
+            "mode",
+            unique=True,
+            sqlite_where=text("status = 'running'"),
+        ),
+    )
 
     id: Mapped[str] = mapped_column(primary_key=True)
     mode: Mapped[str]
     as_of: Mapped[date]
     created_at: Mapped[datetime]
+    ticker: Mapped[str]
+    status: Mapped[str]  # running | completed | rejected | failed
+    status_reason: Mapped[str | None] = mapped_column(default=None)
+    route: Mapped[str | None] = mapped_column(default=None)  # debate | no_trade
+    warnings: Mapped[list[str] | None] = mapped_column(JSON, default=None)
+    config: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    git_commit: Mapped[str | None] = mapped_column(default=None)
+    price_source: Mapped[str | None] = mapped_column(default=None)  # yfinance | alpaca
+    finished_at: Mapped[datetime | None] = mapped_column(default=None)
+
+
+class SignalRecord(Base):
+    """One analyst's signal for a request (M3-FR-21). Named `SignalRecord`
+    so it doesn't clash with `bullpit.llm.schemas.Signal`."""
+
+    __tablename__ = "signals"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    request_id: Mapped[str] = mapped_column(ForeignKey("requests.id"), index=True)
+    analyst: Mapped[str]
+    direction: Mapped[str]
+    confidence: Mapped[float]
+    evidence: Mapped[list[dict[str, str]]] = mapped_column(JSON)
+    flagged: Mapped[bool]
+    note: Mapped[str | None] = mapped_column(default=None)
 
 
 class LLMCall(Base):

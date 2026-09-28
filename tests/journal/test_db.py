@@ -15,7 +15,16 @@ def test_insert_and_read_back_request_and_llm_call() -> None:
 
     now = datetime(2026, 9, 28, 12, 0, 0, tzinfo=UTC)
     with sessions() as session:
-        session.add(Request(id="req-1", mode="live", as_of=date(2026, 9, 28), created_at=now))
+        session.add(
+            Request(
+                id="req-1",
+                mode="live",
+                as_of=date(2026, 9, 28),
+                created_at=now,
+                ticker="AAPL",
+                status="completed",
+            )
+        )
         session.add(
             LLMCall(
                 request_id="req-1",

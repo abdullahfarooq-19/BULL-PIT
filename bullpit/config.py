@@ -9,6 +9,7 @@ default value (dev-plan.md D-M0-12).
 from __future__ import annotations
 
 import re
+from datetime import date
 from functools import lru_cache
 from pathlib import Path
 
@@ -54,12 +55,25 @@ class Settings(BaseSettings):
     data_cache_dir: Path = Path("data_cache")
     news_lookback_days: int = 7
 
+    # --- Request check and analysts (M3) -----------------------------------
+    min_price_sessions: int = 60
+    price_history_sessions: int = 300
+    news_max_headlines: int = 15
+    news_duplicate_similarity: float = 0.8
+    news_thin_articles: int = 3
+    sentiment_neutral_band: float = 0.15
+    brain_min_abs_score: float = 0.15
+    brain_conflict_min_confidence: float = 0.4
+    request_lock_timeout_minutes: int = 30
+    llm_small_model_cutoff: date = date(2024, 6, 30)
+    llm_large_model_cutoff: date = date(2024, 6, 30)
+
     # --- LLM gateway (M2) -------------------------------------------------
     llm_reasoning_effort_small: str = "low"
     llm_reasoning_effort_large: str = "low"
     llm_rpm_limit: int = 30
     llm_tpm_limit: int = 8000
-    llm_output_allowance_tokens: int = 2000
+    llm_output_allowance_tokens: int = 1869
     llm_daily_token_budget: int = 200_000
     llm_max_retries: int = 5
     llm_backoff_base_seconds: float = 1.0

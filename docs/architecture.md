@@ -16,6 +16,7 @@
 |---|---|---|
 | v2.0 | — | Original design (`Bull Pit v2_ architecture and workflow.html`), converted to Markdown with full coverage. |
 | v2.1 | 2026-09-28 | **D8:** the brain's debate-or-skip routing is done by code, not an LLM (Part 4, §19). **D9:** LLM models changed from Groq Llama 3.1 8B / 3.3 70B to Groq **gpt-oss-20b / gpt-oss-120b** (June 2024 training cutoff), so the backtest window now starts **2024-07-01 or later** (§10, §13, §14, §16, §17, §19). Free-tier budget rewritten for the new models' limits (§14). |
+| v2.2 | 2026-09-28 | **D10:** the fundamentals LLM judges the filing-based ratios only; P/E, which moves with the daily price, is computed by code on every request and passed to the debate and report as evidence, so the per-filing cache can never reuse a verdict formed with a later price (Part 6). **D11:** code writes every evidence fact; the analyst LLMs judge direction and confidence (sentiment: per-headline scores) without writing numbers (Part 5). |
 
 Implementation-level decisions that don't change the system's behaviour (deviations D1–D7) are recorded in [`dev-plan.md` §3](dev-plan.md#3-deviations-from-the-architecture-roadmap).
 
@@ -292,7 +293,7 @@ The brain makes **no LLM call** (changed in v2.1, D8). It can only choose betwee
 - **Volatility:** standard deviation of daily returns over 20 days × √252, as a yearly figure.
 - **Returns** over 1 week, 1 month, and 3 months.
 
-**The LLM** sees only this table of numbers and writes a signal. All analysts share this format:
+Code turns the numbers into short evidence facts, each with an ID. **The LLM** sees only those facts and judges the direction and confidence (v2.2, D11). All analysts share this format:
 
 ```json
 {
@@ -318,7 +319,7 @@ The LLM never calculated anything. Code guaranteed the numbers, and the LLM only
 - **The missing Q4:** it's usually only in the annual 10-K report, so code calculates it as the annual total minus Q1 to Q3.
 - **Different names for the same number:** revenue can appear under different XBRL tags depending on the company. A mapping list handles this and is tested on your stocks.
 
-**The LLM** reads the ratios and writes a signal. The signal is cached by (ticker, latest filing date), since fundamentals only change when a new report is filed.
+**The LLM** reads the filing-based ratios (revenue growth, net margin, earnings per share) and judges the signal. The P/E ratio moves with the daily price, so code computes it on every request and adds it to the signal's evidence for the debate and the report, but it isn't in the LLM's prompt (v2.2, D10). The prompt therefore changes only when a new report is filed, so the signal is cached by (ticker, latest filing date) without ever reusing a verdict formed with a later price.
 
 **Hands over:** a fundamentals signal (F-IDs).
 

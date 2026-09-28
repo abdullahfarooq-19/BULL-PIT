@@ -33,9 +33,12 @@ def settings(tmp_path: Path) -> Settings:
 
 
 @pytest.fixture
-def sessions() -> sessionmaker[Session]:
-    """An in-memory journal, schema created directly (Alembic is checked by hand, M2 sec9.5)."""
-    engine = make_engine("sqlite://")
+def sessions(tmp_path: Path) -> sessionmaker[Session]:
+    """A file-backed journal (not `sqlite://`: an in-memory database is one
+    per connection, so a worker thread -- the parallel analysts, M3 NFR-2 --
+    would see an empty journal). Schema created directly; Alembic is checked
+    by hand (M2 sec9.5)."""
+    engine = make_engine(f"sqlite:///{tmp_path / 'journal.db'}")
     Base.metadata.create_all(engine)
     return make_sessions(engine)
 

@@ -30,6 +30,11 @@ logger = get_logger(__name__)
 _COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 _COMPANYFACTS_URL = "https://data.sec.gov/api/xbrl/companyfacts/{cik}.json"
 
+# SEC's current ticker map sends XOM to a holding company created in 2026,
+# with no filing history. Exxon's original CIK holds every filing and still
+# files 10-Qs, so it's right for every as_of (dev-plan M3 D-M3-16).
+_CIK_OVERRIDES: dict[str, int] = {"XOM": 34088}
+
 _last_request_at: float | None = None
 
 
@@ -105,6 +110,8 @@ def get_cik(ticker: str, *, settings: Settings) -> int:
     """The company's CIK, from SEC's current ticker map (D-M1-7: no
     point-in-time ticker history)."""
     normalized = _normalize_ticker(ticker)
+    if normalized in _CIK_OVERRIDES:
+        return _CIK_OVERRIDES[normalized]
     table = _ticker_map_entry(settings, force_refresh=False).frame
     match = table.loc[table["ticker"] == normalized]
 

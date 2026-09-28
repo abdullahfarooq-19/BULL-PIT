@@ -23,3 +23,25 @@ class Signal(BaseModel):
     direction: Literal["bullish", "bearish", "neutral"]
     confidence: float = Field(ge=0.0, le=1.0)
     evidence: list[Evidence]
+    flagged: bool = False  # the analyst failed, or its LLM reply was the safe default
+    note: str | None = None  # why it's flagged, or thin (M3-FR-15)
+
+
+class AnalystVerdict(BaseModel):
+    """Technical and fundamentals LLM reply (M3-FR-9, FR-11; D-M3-1): the
+    LLM only judges direction and confidence over code-written evidence."""
+
+    direction: Literal["bullish", "bearish", "neutral"]
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
+class HeadlineScore(BaseModel):
+    id: str
+    score: float = Field(ge=-1.0, le=1.0)
+    relevance: float = Field(ge=0.0, le=1.0)
+
+
+class HeadlineScores(BaseModel):
+    """Sentiment LLM reply (M3-FR-14): a score and relevance per headline id."""
+
+    scores: list[HeadlineScore]

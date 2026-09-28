@@ -34,11 +34,23 @@ uv run bullpit doctor
 
 # 4. Create the journal database (LLM call log, requests, and later tables).
 uv run alembic upgrade head
+
+# 5. Run your first research request (technical, fundamentals and news
+#    sentiment analysts, then a debate-or-no-trade route). `bullpit request`
+#    also applies any pending journal migration itself, so step 4 is
+#    optional once you've run it once.
+uv run bullpit request AAPL --mode backtest --as-of 2024-07-12
+# Live mode (today's data, no --as-of): uv run bullpit request AAPL
 ```
 
 `doctor` prints one line per check (config, the paper-only guard, Alpaca
 trading and data, Groq, SEC EDGAR, yfinance) and exits non-zero if anything
 needs fixing, without ever printing a secret.
+
+`bullpit request` prints the account snapshot, each analyst's signal with
+its evidence, the signals board's score and conflict, and the route
+(`debate` or `no_trade`) -- the first half of the graph; the debate,
+trader and risk manager arrive in M4.
 
 ## Development commands
 
