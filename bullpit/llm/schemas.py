@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class Evidence(BaseModel):
@@ -45,3 +45,47 @@ class HeadlineScores(BaseModel):
     """Sentiment LLM reply (M3-FR-14): a score and relevance per headline id."""
 
     scores: list[HeadlineScore]
+
+
+class DebatePoint(BaseModel):
+    """One claim from a debate turn (M4-FR-2, FR-3): code checks
+    `evidence_ids` against the board's registry after the reply comes back."""
+
+    claim: str
+    evidence_ids: list[str]
+
+
+class DebateReply(BaseModel):
+    """Bull/bear LLM reply (M4-FR-2)."""
+
+    points: list[DebatePoint]
+    concessions: list[str]
+    conviction: float = Field(ge=0.0, le=1.0)
+
+
+class TraderReply(BaseModel):
+    """Trader LLM reply (architecture Part 10, minus `ticker`: code fills it
+    in from the request, D-M4-5)."""
+
+    action: Literal["buy", "no_trade"]
+    target_weight: float = Field(ge=0.0, le=1.0)
+    exit_style: Literal["tight", "normal", "wide"]
+    confidence: float = Field(ge=0.0, le=1.0)
+    decisive_evidence: list[str]
+    reasoning: str
+
+
+class RiskReviewReply(BaseModel):
+    """Stage B LLM reply (M4-FR-11). `shrink` requires `shares`; an invalid
+    combination fails validation, so it gets the gateway's own retry
+    (D-M4-10) rather than a second, risk-specific check."""
+
+    decision: Literal["approve", "shrink", "veto"]
+    shares: int | None = Field(default=None, ge=1)
+    reason: str
+
+    @model_validator(mode="after")
+    def _shrink_requires_shares(self) -> RiskReviewReply:
+        if self.decision == "shrink" and self.shares is None:
+            raise ValueError("a 'shrink' decision requires 'shares'")
+        return self
