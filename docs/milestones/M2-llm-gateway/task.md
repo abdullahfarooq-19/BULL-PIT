@@ -105,8 +105,56 @@ much shorter prompt) scaled up for a fuller analyst-shaped prompt. `llm_output_a
 
 ### M2-T-12: Alembic schema check
 
-*(pending)*
+`JOURNAL_DB_PATH` pointed at a temp file, `uv run alembic upgrade head` ran clean
+(`Running upgrade  -> 0001, requests_llm_calls`). The resulting SQLite schema
+(inspected via `sqlite_master`) matches `journal/models.py` exactly:
+
+- `llm_calls`: 13 columns (`id` PK autoincrement, `request_id`, `role`, `model`,
+  `prompt_version`, `cache_hit`, `cache_key`, `input_tokens`, `output_tokens`,
+  `reasoning_tokens`, `latency_ms`, `flagged`, `created_at`), indexes
+  `ix_llm_calls_model_created_at` (`model`, `created_at`) and
+  `ix_llm_calls_request_id` (`request_id`).
+- `requests`: 4 columns (`id` PK, `mode`, `as_of`, `created_at`), no extra index.
+
+No drift between the migration and the declarative models.
 
 ## Retrospective
 
-*(written at acceptance)*
+**Delivered:** one controlled door for every LLM call (`call_llm`), with role
+routing, a per-call size ceiling, a file-backed response cache (ADR-0004),
+exponential backoff with jitter, a per-model in-memory RPM/TPM bucket, a
+rolling-24-hour daily budget backed by the journal, JSON-mode structured
+output with one validation retry and a flagged safe-default fallback, and an
+optional Langfuse toggle. The journal (`journal.db`, SQLAlchemy 2.0 models,
+Alembic) is bootstrapped with `requests` (minimal) and `llm_calls`. All 8 ACs
+pass: AC-1 to AC-6 and AC-8 by `tests/llm/test_gateway.py` (12 tests, run in
+under half a second, no network), AC-7 by the real measurement run below.
+
+**AC-7 numbers vs. architecture §14:** the measurement probe (a compact,
+analyst-shaped prompt asking for `direction`/`confidence`) cost 321 total
+tokens on the small model (241 input, 21 output, 59 reasoning) and 317 on the
+large model (241 input, 21 output, 55 reasoning) — both at `low` reasoning
+effort (D-M2-7). That's far under the 8K TPM ceiling per model and a small
+slice of architecture §14's ~25-30K-token full-request estimate; reasoning
+cost (55-59 tokens) is modest next to the 2000-token `llm_output_allowance_tokens`,
+confirming M0 finding A4/C4's low-effort choice leaves ample headroom. Real
+per-call cost is well inside architecture §14's per-request budget, so the
+5-8 live requests/day and short-backtest-window guidance there still holds;
+M3-M5's own per-agent measurements (dev-plan C14) will refine it further once
+real prompts exist.
+
+**What changed from the original plan:** the pre-development review
+(specs-plan §7.1, R1-R10) caught real bugs before any code was written — the
+wrong clock for the daily budget and backoff sleep (R1), an unanswered M0
+finding (R2), unnamed constants (R3), an under-counted validation retry
+(R4), a caller-rollback risk to spent-token accounting (R5), a cache key
+blind to `reasoning_effort` (R6), unspecified error mapping (R7), a
+duplicated cache-root setting (R8), an unjustified Langfuse dependency with
+eager registration (R9), and a few file-location slips (R10). Implementation
+found one more: `tempfile.TemporaryDirectory()` cleanup failed on Windows
+because SQLite kept the journal file's handle open after the measurement
+script finished; fixed with an explicit `engine.dispose()` before the temp
+directory is removed.
+
+**Nothing else deviated from `specs-plan.md`.** No scope was added or cut
+during implementation.

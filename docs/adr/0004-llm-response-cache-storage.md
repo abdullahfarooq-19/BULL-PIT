@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Proposed |
+| **Status** | Accepted |
 | **Date** | 2026-09-28 |
 | **Milestone** | M2 ([specs-plan §7 D-M2-4](../milestones/M2-llm-gateway/specs-plan.md#7-decisions-made-in-this-document)) |
 
