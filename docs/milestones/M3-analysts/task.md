@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Implemented, T-1 through T-18 done; awaiting owner acceptance (merge and tag `m3`) |
+| **Status** | Accepted and merged to `master`, tagged `m3` (merge commit `a50baaf`) |
 | **Date** | 2026-09-28 |
 | **Specs and plan** | [`specs-plan.md`](specs-plan.md) (Part A and Part B both approved 2026-09-28, Q1 = A) |
 | **Branch** | `m3-analysts`, from `master` |
@@ -30,7 +30,7 @@ Each task is about half a day or less, is one commit when the owner asks for com
 | [x] | M3-T-15 | **Graph tests.** Record AAPL `NetIncomeLoss` and `EarningsPerShareDiluted` into the companyfacts fixture; `test_graph.py` (the four tests in plan §13) | `tests/fixtures/sec/aapl_companyfacts.json`, `tests/test_graph.py` | AC-1 (automated), AC-5, AC-6, AC-7, AC-9 | All four pass; whole suite still runs in under a minute | `c39b3eb` |
 | [x] | M3-T-16 | **Real runs.** AC-1 (5 tickers × 3 dates + one live); AC-3 revenue table; AC-4 rejections; AC-8 parallel start times; AC-11 journal rows, stale lock and Alembic schema | this file (evidence) | AC-1, AC-3, AC-4, AC-8, AC-11 | Evidence pasted below; every check passes | (docs-only) |
 | [x] | M3-T-17 | **Tokens and allowance.** Per-template token figures from `llm_calls` over the T-16 runs; set `llm_output_allowance_tokens` per FR-23; re-run one request to confirm nothing is flagged | `bullpit/config.py`, `.env.example`, this file | FR-23; AC-10; C14 | Figures and the new default recorded; the re-run has no flagged reply | `aa2fde4` |
-| [ ] | M3-T-18 | **Acceptance.** README quick start gains a first `bullpit request`; retrospective (token numbers vs architecture §14, route split for D-M3-7, carry-overs); then, when the owner asks: push, CI green, merge to `master`, tag `m3` | `README.md`, this file | DoD §1.5 | Owner accepts | |
+| [x] | M3-T-18 | **Acceptance.** README quick start gains a first `bullpit request`; retrospective (token numbers vs architecture §14, route split for D-M3-7, carry-overs); then, when the owner asks: push, CI green, merge to `master`, tag `m3` | `README.md`, this file | DoD §1.5 | Owner accepts | `a50baaf` |
 
 ## Traceability
 
