@@ -42,7 +42,7 @@ Phases:
 
 | ✓ | ID | Task | Files | Serves | Verified by | Commit |
 |---|---|---|---|---|---|---|
-| [ ] | M0-T-16 | **Bracket `place`.** Run `alpaca_bracket.py place --confirm`: 1-share GTC market bracket, poll until filled, re-submit the same `client_order_id`. If GTC brackets are refused, stop and bring it to the owner (specs-plan §11.1) | `scripts/spikes/output/` (raw only) | FR-18, AC-5, A7, A8 | Raw output shows the fill, both legs and their statuses, and the duplicate-ID result | — |
+| [x] | M0-T-16 | **Bracket `place`.** Run `alpaca_bracket.py place --confirm`: 1-share GTC market bracket, poll until filled, re-submit the same `client_order_id`. If GTC brackets are refused, stop and bring it to the owner (specs-plan §11.1) | `scripts/spikes/output/` (raw only) | FR-18, AC-5, A7, A8 | Raw output shows the fill, both legs and their statuses, and the duplicate-ID result | — |
 | [ ] | M0-T-17 | **Bracket `inspect`** in the next session: are both legs still active after the overnight close? | `scripts/spikes/output/` | AC-5, A7 | Raw output shows leg statuses after the close | — |
 | [ ] | M0-T-18 | **Bracket `close`.** Cancel the legs, market-sell the share, read the final state | `scripts/spikes/output/` | AC-5 | Position flat; no open orders left (read-back) | — |
 | [ ] | M0-T-19 | **Findings final pass and ADR-0002.** Fill A7 and A8 in `findings.md`; write `docs/adr/0002-bracket-order-tif-and-legs.md` (Accepted) from them | `findings.md`, `docs/adr/0002-bracket-order-tif-and-legs.md` | AC-5, AC-6, AC-10 | Every row in `findings.md` has a verdict; owner review | — |
@@ -310,6 +310,27 @@ $ uv run bullpit doctor        # All checks passed.
 ```
 
 Temp clone deleted afterwards.
+
+### M0-T-16: bracket `place` (real fill, A7 partial, A8)
+
+Confirmed the market was actually open first, via Alpaca's own clock
+endpoint (`is_open: True`, `next_close` same day 16:00 ET) rather than
+guessing from the PKT market-hours window. 1-share GTC market bracket on
+F (Ford):
+
+```
+submitted: 95769db7-..., status=OrderStatus.PENDING_NEW
+after poll: status=OrderStatus.FILLED, filled_avg_price=12.57
+  take-profit leg: OrderType.LIMIT, limit_price=13.19, status=OrderStatus.NEW
+  stop-loss leg:   OrderType.STOP,  stop_price=11.94,  status=OrderStatus.HELD
+duplicate client_order_id rejected: {"code":40010001,"message":"client_order_id must be unique"}
+```
+
+**A8 confirmed**: a reused `client_order_id` is rejected outright. **A7
+partially confirmed**: both legs are live immediately after the fill (the
+take-profit leg armed as `NEW`, the stop-loss leg `HELD` pending
+activation) -- this doesn't yet prove overnight persistence, which needs
+`inspect` after today's close (M0-T-17, not yet run).
 
 ---
 
