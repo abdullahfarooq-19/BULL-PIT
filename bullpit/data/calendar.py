@@ -13,6 +13,7 @@ import bisect
 from datetime import date, datetime
 from functools import lru_cache
 from typing import cast
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pandas_market_calendars as mcal
@@ -21,6 +22,8 @@ from bullpit.errors import ConfigError
 
 _CALENDAR_START = "2000-01-01"
 _CALENDAR_END = "2035-12-31"
+
+NEW_YORK = ZoneInfo("America/New_York")
 
 
 @lru_cache(maxsize=1)

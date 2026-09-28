@@ -17,7 +17,6 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import cast
 from urllib.parse import quote
-from zoneinfo import ZoneInfo
 
 import pandas as pd
 import pyarrow as pa
@@ -25,7 +24,7 @@ import pyarrow.parquet as pq
 
 from bullpit.clock import utc_now
 from bullpit.config import Settings
-from bullpit.data.calendar import last_completed_session
+from bullpit.data.calendar import NEW_YORK, last_completed_session
 from bullpit.data.guard import drop_after
 from bullpit.logging import get_logger
 
@@ -33,7 +32,6 @@ logger = get_logger(__name__)
 
 _START_KEY = b"bullpit_start"
 _COMPLETE_THROUGH_KEY = b"bullpit_complete_through"
-_NEW_YORK = ZoneInfo("America/New_York")
 
 
 @dataclass(frozen=True)
@@ -82,8 +80,8 @@ def complete_through(end: date, fetched_at: datetime) -> date:
     (M1-FR-16, D-M1-4): a same-day fetch may still be missing that day's
     late filings or news.
     """
-    midnight_ny = datetime.combine(fetched_at.astimezone(_NEW_YORK).date(), datetime.min.time())
-    limit = last_completed_session(midnight_ny.replace(tzinfo=_NEW_YORK))
+    midnight_ny = datetime.combine(fetched_at.astimezone(NEW_YORK).date(), datetime.min.time())
+    limit = last_completed_session(midnight_ny.replace(tzinfo=NEW_YORK))
     return min(end, limit)
 
 
