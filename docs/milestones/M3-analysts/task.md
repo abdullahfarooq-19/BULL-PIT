@@ -29,7 +29,7 @@ Each task is about half a day or less, is one commit when the owner asks for com
 | [x] | M3-T-14 | **Graph, runner, CLI.** `graph.py` (`Deps`, `build_graph`, the analyst failure wrapper); `runners/request.py` (plan §9.7: cutoff, lock, run, record); the `request` command with auto-migrate | `bullpit/graph.py`, `bullpit/runners/request.py`, `bullpit/cli.py` | FR-1 to FR-3, FR-15, FR-18 to FR-20; D-M3-5, D-M3-9, D-M3-13; §7.1 C-5 | `uv run bullpit request AAPL --mode backtest --as-of 2024-07-12` completes against the real services and prints signals and a route | `8fd93f6` |
 | [x] | M3-T-15 | **Graph tests.** Record AAPL `NetIncomeLoss` and `EarningsPerShareDiluted` into the companyfacts fixture; `test_graph.py` (the four tests in plan §13) | `tests/fixtures/sec/aapl_companyfacts.json`, `tests/test_graph.py` | AC-1 (automated), AC-5, AC-6, AC-7, AC-9 | All four pass; whole suite still runs in under a minute | `c39b3eb` |
 | [x] | M3-T-16 | **Real runs.** AC-1 (5 tickers × 3 dates + one live); AC-3 revenue table; AC-4 rejections; AC-8 parallel start times; AC-11 journal rows, stale lock and Alembic schema | this file (evidence) | AC-1, AC-3, AC-4, AC-8, AC-11 | Evidence pasted below; every check passes | (docs-only) |
-| [ ] | M3-T-17 | **Tokens and allowance.** Per-template token figures from `llm_calls` over the T-16 runs; set `llm_output_allowance_tokens` per FR-23; re-run one request to confirm nothing is flagged | `bullpit/config.py`, `.env.example`, this file | FR-23; AC-10; C14 | Figures and the new default recorded; the re-run has no flagged reply | |
+| [x] | M3-T-17 | **Tokens and allowance.** Per-template token figures from `llm_calls` over the T-16 runs; set `llm_output_allowance_tokens` per FR-23; re-run one request to confirm nothing is flagged | `bullpit/config.py`, `.env.example`, this file | FR-23; AC-10; C14 | Figures and the new default recorded; the re-run has no flagged reply | `pending` |
 | [ ] | M3-T-18 | **Acceptance.** README quick start gains a first `bullpit request`; retrospective (token numbers vs architecture §14, route split for D-M3-7, carry-overs); then, when the owner asks: push, CI green, merge to `master`, tag `m3` | `README.md`, this file | DoD §1.5 | Owner accepts | |
 
 ## Traceability
@@ -161,6 +161,29 @@ Stale lock: a hand-inserted `running` row (STALETEST, created > request_lock_tim
 Alembic: `alembic upgrade head` on a fresh temp DB, then a second `alembic revision
 --autogenerate` pass against the upgraded DB, detects no further diff (empty `upgrade()`/
 `downgrade()`) -- the migrated schema matches `models.py` exactly (same check performed in T-13).
+
+### M3-T-17: token measurement and the allowance (AC-10, FR-23)
+
+Real, non-cache-hit `llm_calls` rows over the 16 T-16 runs, grouped by `prompt_version` (one hash
+per template file, so this groups exactly by analyst):
+
+| Template | Calls | Input tokens (min/mean/max) | Output tokens (min/mean/max) | Reasoning tokens (min/mean/max) | Largest output+reasoning |
+|---|---|---|---|---|---|
+| `technical.md` | 16 | 303 / 304.4 / 305 | 20 / 20.8 / 21 | 41 / 69.0 / 105 | 125 |
+| `fundamentals.md` | 16 | 283 / 284.4 / 285 | 20 / 20.9 / 21 | 37 / 41.4 / 51 | 71 |
+| `sentiment.md` | 16 | 359 / 658.4 / 763 | 81 / 235.1 / 289 | 5 / 129.1 / 334 | 623 |
+
+Overall largest `output_tokens + reasoning_tokens` of any M3 call: **623** (sentiment, the
+15-headline case). Per M3-FR-23, `llm_output_allowance_tokens` is lowered to 3x that figure:
+3 x 623 = **1869** (`bullpit/config.py`, `.env.example`; was 2000, M2's untuned default).
+
+Sentiment costs 3-4x a single-fact analyst call (technical/fundamentals stay near the M2 probe's
+~320-token baseline; sentiment scales with headline count, up to 15). All three stay far under
+the 8K TPM per-call ceiling even before this tuning, so the change is about tighter per-minute
+pacing (M2's carry-over: the bucket charges the full allowance per call), not correctness.
+
+Confirmation re-run after lowering the default: `bullpit request MSFT --mode backtest --as-of
+2024-10-18` against the real services -- no `[FLAGGED]` tag on any of the three signals.
 
 ## Retrospective
 

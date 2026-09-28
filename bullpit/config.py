@@ -73,7 +73,7 @@ class Settings(BaseSettings):
     llm_reasoning_effort_large: str = "low"
     llm_rpm_limit: int = 30
     llm_tpm_limit: int = 8000
-    llm_output_allowance_tokens: int = 2000
+    llm_output_allowance_tokens: int = 1869
     llm_daily_token_budget: int = 200_000
     llm_max_retries: int = 5
     llm_backoff_base_seconds: float = 1.0
