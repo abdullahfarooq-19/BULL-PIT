@@ -51,11 +51,11 @@ Phases:
 
 | ✓ | ID | Task | Files | Serves | Verified by | Commit |
 |---|---|---|---|---|---|---|
-| [ ] | M0-T-20 | **Branch and commits.** Create `m0-foundations`; commit the Phase 1–2 work as one commit per task where the files allow it (pre-commit hooks run on each); back-fill the hashes in this file | All M0 files | DoD §1.5 | `git log` shows the task commits; pre-commit passed on each | — |
-| [ ] | M0-T-21 | **Local secret-scan check.** A made-up key in a scratch file is blocked by the gitleaks hook on `git commit`; scratch file removed | none kept | AC-7 (local half) | Blocked-commit output pasted below | — |
-| [ ] | M0-T-22 | **Remote and first CI run.** Owner creates the public repo; add the remote; push `m0-foundations`; CI green | — | AC-1 (CI half), FR-6 | CI run link | — |
-| [ ] | M0-T-23 | **CI failure checks.** Throwaway branch with a lint error → CI red; throwaway branch with a fake key pushed with `--no-verify` → `secrets` job red (or GitHub push protection blocks it, recorded, then re-run with a generic token, specs-plan §13); both branches deleted | none kept | AC-2, AC-7 (CI half) | CI run links | — |
-| [ ] | M0-T-24 | **Fresh clone on Windows.** Clone from GitHub into a temp folder, `uv sync`, `uv run pytest` | — | AC-1 | Output pasted below | — |
+| [x] | M0-T-20 | **Branch and commits.** Create `m0-foundations`; commit the Phase 1–2 work as one commit per task where the files allow it (pre-commit hooks run on each); back-fill the hashes in this file | All M0 files | DoD §1.5 | `git log` shows the task commits; pre-commit passed on each | 62e0c6e |
+| [x] | M0-T-21 | **Local secret-scan check.** A made-up key in a scratch file is blocked by the gitleaks hook on `git commit`; scratch file removed | none kept | AC-7 (local half) | Blocked-commit output pasted below | — |
+| [x] | M0-T-22 | **Remote and first CI run.** Owner creates the public repo; add the remote; push `m0-foundations`; CI green | — | AC-1 (CI half), FR-6 | CI run link | — |
+| [x] | M0-T-23 | **CI failure checks.** Throwaway branch with a lint error → CI red; throwaway branch with a fake key pushed with `--no-verify` → `secrets` job red (or GitHub push protection blocks it, recorded, then re-run with a generic token, specs-plan §13); both branches deleted | none kept | AC-2, AC-7 (CI half) | CI run links; real bug found and fixed (evidence below) | 5a16bb0 |
+| [x] | M0-T-24 | **Fresh clone on Windows.** Clone from GitHub into a temp folder, `uv sync`, `uv run pytest` | — | AC-1 | Output pasted below | — |
 
 ## Phase 4 — Acceptance
 
@@ -227,6 +227,89 @@ $ uv run ruff format --check . 32 files already formatted
 $ uv run mypy bullpit          Success: no issues found in 19 source files
 $ uv run pytest -q             28 passed in 0.8s
 ```
+
+### M0-T-20 to M0-T-22: git phase, remote, first CI run
+
+`master` (the pre-existing docs commits) and `m0-foundations` (13 commits,
+one per Phase 1 task plus the specs-plan and the final task.md update)
+were both pushed to `https://github.com/abdullahfarooq-19/BULL-PIT`. The
+remote already had one placeholder commit on `main`; `master` and
+`m0-foundations` were pushed as new branches alongside it (no conflict).
+The first CI run on `m0-foundations`
+([run 36431032434](https://github.com/abdullahfarooq-19/BULL-PIT/actions/runs/36431032434))
+passed both jobs cleanly on the first try:
+
+```
+check    -> success  (Lint, Format check, Type check, Test all passed)
+secrets  -> success
+```
+
+### M0-T-21: local secret-scan block
+
+A GitHub-PAT-shaped fake key (`ghp_...`) in a scratch file, committed on a
+branch off `m0-foundations` (so `.pre-commit-config.yaml` was present):
+
+```
+Finding:     GENERIC_TOKEN = "REDACTEDAB01"
+RuleID:      generic-api-key
+Finding:     GENERIC_TOKEN = "REDACTEDAB01"
+RuleID:      github-pat
+leaks found: 2
+
+ruff check...............................................................Failed
+S105  Possible hardcoded password assigned to: "GENERIC_TOKEN"
+```
+
+Both the gitleaks hook and ruff's `S105` (bandit) rule blocked the commit
+independently. Scratch file removed; no commit was made this way (see
+M0-T-23 for the `--no-verify` variant that exercised CI).
+
+### M0-T-23: CI failure checks, and a real bug found and fixed
+
+**Lint failure** (throwaway branch `ci-check-lint-failure`, an unused
+import): CI's `check` job failed at the `Lint` step as expected
+([run 36431170358](https://github.com/abdullahfarooq-19/BULL-PIT/actions/runs/36431170358)).
+Branch deleted locally and on GitHub afterwards.
+
+**Secret leak** (throwaway branch `ci-check-secret-leak`, the same
+GitHub-PAT-shaped fake key, committed with `--no-verify` to bypass the
+local hook and reach CI): GitHub's push protection did **not** block the
+push (not enabled on this repo). CI's overall `check` job failed (again
+via ruff's `S105`), but the **`secrets` job itself reported "no leaks
+found"**
+([run 36431253053](https://github.com/abdullahfarooq-19/BULL-PIT/actions/runs/36431253053)).
+Its logs showed it scanned only the new commit (~63 bytes) and used
+whatever gitleaks version `gitleaks-action@v2` currently bundles by
+default -- different from the `v8.21.2` pinned for the local pre-commit
+hook. That version mismatch is the most likely explanation for the
+missed detection.
+
+**Fix:** pinned `GITLEAKS_VERSION: "8.21.2"` in `ci.yml`'s `secrets` job
+(commit `5a16bb0`) so CI uses the exact same gitleaks version as
+pre-commit. Re-tested on a second throwaway branch
+(`ci-check-secret-leak-2`) with the identical fake key: the `secrets` job
+now fails correctly
+([run 36431648055](https://github.com/abdullahfarooq-19/BULL-PIT/actions/runs/36431648055)):
+
+```
+secrets -> failure   (Scan for secrets: failure)
+check   -> failure   (Lint: failure)
+```
+
+Both branches deleted locally and on GitHub afterwards. This is exactly
+the kind of gap M0-AC-7's CI-failure check exists to catch -- found and
+fixed before acceptance, not after.
+
+### M0-T-24: fresh clone on Windows (AC-1)
+
+```
+$ git clone -b m0-foundations https://github.com/abdullahfarooq-19/BULL-PIT.git <temp dir>
+$ uv sync --locked             # succeeded
+$ uv run pytest -q             # 28 passed in 4.56s
+$ uv run bullpit doctor        # All checks passed.
+```
+
+Temp clone deleted afterwards.
 
 ---
 
