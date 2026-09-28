@@ -2,7 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Revision 4: all decisions resolved; M0 in progress |
+| **Status** | Revision 5: all decisions resolved; M3 in progress |
+| **Changes in revision 5** | D10 and D11 added ([§3](#3-deviations-from-the-architecture-roadmap)), approved with the M3 specs; `architecture.md` v2.2 |
 | **Date** | 2026-09-28 |
 | **Changes in revision 4** | Scope review of M1–M9 ([§10.1](#101-scope-review-revision-4)): work that doesn't change the architecture cut or simplified (C1–C13); token measurement, the pinned-model guard and the loss-warning wiring moved to the milestones that can actually do them (C14–C16). `architecture.md` unchanged |
 | **Changes in revision 3** | Testing cut to what's necessary (§7 rewritten; CI on Ubuntu only; coverage targets, contract and golden tests removed); Q8a, Q10a, Q11 decided; D8 reviewed and kept |
@@ -189,9 +190,9 @@ bull-pit/
 
 ## 3. Deviations from the architecture roadmap
 
-The architecture's M0–M9 order is kept. Carrying it out properly needs a few pieces to arrive **earlier** than the architecture roadmap implies, because later milestones depend on them (D1–D7). None of these change the system's behaviour. D8 and D9 **do** change the architecture, and `architecture.md` v2.1 has been updated to match.
+The architecture's M0–M9 order is kept. Carrying it out properly needs a few pieces to arrive **earlier** than the architecture roadmap implies, because later milestones depend on them (D1–D7). None of these change the system's behaviour. D8–D11 **do** change the architecture, and `architecture.md` (v2.1, v2.2) has been updated to match.
 
-**Status: D1–D9 approved by the owner on 2026-09-28.**
+**Status: D1–D9 approved by the owner on 2026-09-28; D10 and D11 approved the same day with the M3 specs.**
 
 | # | Deviation | Reason |
 |---|---|---|
@@ -204,6 +205,8 @@ The architecture's M0–M9 order is kept. Carrying it out properly needs a few p
 | D7 | **Langfuse tracing is optional and switched off by default**, wired in M2 behind a setting | Keeps the core free of a hard dependency on an external service; tracing is a debugging aid |
 | D8 | **The brain's debate-or-skip route is computed by code** (thresholds in config). No LLM call for routing; data warnings are still attached by code. Architecture Part 4 changes from `[Both]` to `[Code]` | Routing is a threshold decision, so an LLM adds cost, latency and non-determinism without adding judgment. Code makes the route unit-testable and saves a call per request |
 | D9 | **Model swap: Groq Llama 3.1 8B / 3.3 70B → Groq `openai/gpt-oss-20b` (small) and `openai/gpt-oss-120b` (large), pinned.** The backtest window must start **2024-07-01 or later**, derived from the models' published June 2024 cutoff (enforced by M6-AC-5). Architecture §10, §13, §14 updated | Both are free on Groq and have a published training cutoff, which the look-ahead protection depends on. The free-tier limits differ from the Llama plan (see architecture §14 and the risks in [§9](#9-plan-level-risks)) |
+| D10 | **The fundamentals LLM judges filing-based ratios only; P/E is code-computed evidence for the debate and report.** Architecture Part 6 updated (v2.2) | Part 6 asked for the LLM to read P/E *and* for the signal to be cached per filing. P/E changes daily, so the cached verdict would go stale or, reused across backtest dates, leak a later price. Owner chose this option ([M3 specs-plan](milestones/M3-analysts/specs-plan.md) Q1) |
+| D11 | **Code writes every evidence fact; the analyst LLMs only judge** (direction and confidence; sentiment: per-headline scores). The signal format is unchanged. Architecture Part 5 updated (v2.2) | No LLM-written number can reach the debate or report, and the evidence registry is exact ([M3 specs-plan](milestones/M3-analysts/specs-plan.md) D-M3-1) |
 
 ---
 
