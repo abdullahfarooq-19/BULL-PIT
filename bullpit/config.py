@@ -54,6 +54,27 @@ class Settings(BaseSettings):
     data_cache_dir: Path = Path("data_cache")
     news_lookback_days: int = 7
 
+    # --- LLM gateway (M2) -------------------------------------------------
+    llm_reasoning_effort_small: str = "low"
+    llm_reasoning_effort_large: str = "low"
+    llm_rpm_limit: int = 30
+    llm_tpm_limit: int = 8000
+    llm_output_allowance_tokens: int = 2000
+    llm_daily_token_budget: int = 200_000
+    llm_max_retries: int = 5
+    llm_backoff_base_seconds: float = 1.0
+    llm_timeout_seconds: float = 60.0
+    llm_seed: int = 1
+
+    # --- Journal (M2) -------------------------------------------------------
+    journal_db_path: Path = Path("journal.db")
+
+    # --- Langfuse (optional, off by default; M2 D7) -----------------------
+    langfuse_enabled: bool = False
+    langfuse_host: str = "https://cloud.langfuse.com"
+    langfuse_public_key: SecretStr | None = None
+    langfuse_secret_key: SecretStr | None = None
+
     # --- Logging ------------------------------------------------------------
     log_level: str = "INFO"
     log_dir: Path = Path("logs")
@@ -66,6 +87,8 @@ class Settings(BaseSettings):
         "alpaca_secret_key",
         "groq_api_key",
         "sec_contact_email",
+        "langfuse_public_key",
+        "langfuse_secret_key",
         mode="before",
     )
     @classmethod

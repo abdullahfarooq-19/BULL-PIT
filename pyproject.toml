@@ -18,6 +18,9 @@ dependencies = [
     "pandas>=3.0.6",
     "pyarrow>=25.0.1",
     "pandas-market-calendars>=5.4.0",
+    "sqlalchemy>=2.1.1",
+    "alembic>=1.20.0",
+    "jinja2>=3.1.6",
 ]
 
 [project.scripts]
@@ -82,6 +85,9 @@ warn_redundant_casts = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 check_untyped_defs = true
+# Alembic's generated boilerplate; revision files start with digits, which
+# mypy rejects as module names (M2 specs-plan sec9.5).
+exclude = ["^bullpit/journal/migrations/"]
 
 [[tool.mypy.overrides]]
 module = ["bullpit.risk.*", "bullpit.data.*", "bullpit.broker.*", "bullpit.tools.*", "bullpit.eval.*"]
@@ -97,6 +103,11 @@ ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["pyarrow.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Not a project dependency (D-M2-9); only imported lazily, behind LANGFUSE_ENABLED.
+module = ["langfuse.*"]
 ignore_missing_imports = true
 
 # ---------------------------------------------------------------------------

@@ -31,6 +31,9 @@ cp .env.example .env
 
 # 3. Check everything is configured and every external service is reachable.
 uv run bullpit doctor
+
+# 4. Create the journal database (LLM call log, requests, and later tables).
+uv run alembic upgrade head
 ```
 
 `doctor` prints one line per check (config, the paper-only guard, Alpaca
