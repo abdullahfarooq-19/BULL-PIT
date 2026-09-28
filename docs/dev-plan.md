@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Revision 5: all decisions resolved; M3 in progress |
+| **Status** | Revision 5: all decisions resolved; M4 in progress |
 | **Changes in revision 5** | D10 and D11 added ([§3](#3-deviations-from-the-architecture-roadmap)), approved with the M3 specs; `architecture.md` v2.2 |
 | **Date** | 2026-09-28 |
 | **Changes in revision 4** | Scope review of M1–M9 ([§10.1](#101-scope-review-revision-4)): work that doesn't change the architecture cut or simplified (C1–C13); token measurement, the pinned-model guard and the loss-warning wiring moved to the milestones that can actually do them (C14–C16). `architecture.md` unchanged |
@@ -404,9 +404,9 @@ Each milestone below states the goal, scope, deliverables, **draft acceptance cr
 
 **In scope** (architecture Parts 9–11)
 
-- `agents/bull.py`, `agents/bear.py`: two rounds, bull first, each turn about 150 words (enforced by a token cap in the prompt, measured by code and flagged if exceeded), must cite evidence IDs, may concede. The **unsupported-claim check** in code flags citations of evidence IDs that don't exist. Output: transcript, each side's final conviction, concessions.
+- `agents/debate.py` (`bull.md`, `bear.md`; D-M4-1): two rounds, bull first, each turn about 150 words (enforced by a token cap in the prompt, measured by code and flagged if exceeded), must cite evidence IDs, may concede. The **unsupported-claim check** in code flags citations of evidence IDs that don't exist. Output: transcript, each side's final conviction, concessions.
 - `agents/trader.py`: reply schema exactly as in architecture Part 10. `target_weight` is clamped to [0, per-stock cap] by code; `decisive_evidence` IDs must exist.
-- `risk/exits.py`: the ATR exit table (tight 1.5/2.25, normal 2/3, wide 3/4.5), keeping reward to risk at 1.5.
+- `risk/sizing.py` (D-M4-2): the ATR exit table (tight 1.5/2.25, normal 2/3, wide 3/4.5), keeping reward to risk at 1.5.
 - `risk/sizing.py`: shares = min(target-weight shares, 1%-risk shares, 10%-cap shares **counting existing holdings**, cash shares), floored to whole shares. It records **which limit set the size**.
 - `risk/rules.py`: hard rules (block if 0 shares, if no cash, if the cap is already reached, if ATR or price is invalid); the **loss warning** flag (equity down more than 5% over the last 7 days), written as a pure function over an equity series. No equity history exists yet, so in M4 its input is "unknown" and the report shows a warning; M6 feeds it simulated `equity_snapshots` and M8 live ones (C16).
 - `agents/risk_review.py` (Stage B): approve, shrink or veto with a reason. Code makes sure it can **only shrink** (it never raises size). A veto goes back to the trader, at most 2 times, then the result is "no trade".
