@@ -13,6 +13,7 @@ from decimal import Decimal
 import pytest
 
 from bullpit.agents.signals_board import build_board
+from bullpit.config import Settings
 from bullpit.domain import Account
 from bullpit.llm.gateway import CompletionReply, CompletionRequest
 from bullpit.llm.schemas import Evidence, Signal
@@ -114,6 +115,15 @@ def board_state() -> RequestState:
     return make_board_state()
 
 
+@pytest.fixture
+def settings(settings: Settings) -> Settings:
+    """Overrides the base `settings` fixture (tests/conftest.py): a node
+    test scripts several large-role calls in one test, so the per-minute
+    limits are raised here so the gateway's real pacing never sleeps
+    through them (plan sec13, the same override the graph tests use)."""
+    return settings.model_copy(update={"llm_tpm_limit": 1_000_000, "llm_rpm_limit": 1_000})
+
+
 def make_reply(
     content: str, *, input_tokens: int = 50, output_tokens: int = 10, reasoning_tokens: int = 5
 ) -> CompletionReply:
@@ -127,8 +137,9 @@ def make_reply(
 
 class ScriptedLLM:
     """Records every rendered prompt; answers with queued replies, matched
-    by the template's fixed first line and consumed in order (so a test can
-    script a call and its retry as two queued entries for the same line).
+    by which fixed first line the prompt starts with, consumed in order (so
+    a test can script a call and its retry as two queued entries for the
+    same template).
     """
 
     def __init__(self) -> None:
@@ -141,10 +152,9 @@ class ScriptedLLM:
 
     def __call__(self, request: CompletionRequest) -> CompletionReply:
         prompt = request.messages[0]["content"]
-        first_line = prompt.splitlines()[0]
         with self._lock:
             self.prompts.append(prompt)
-            queue = self._queues.get(first_line)
-            if not queue:
-                raise AssertionError(f"no scripted reply queued for: {first_line!r}")
-            return queue.popleft()
+            for first_line, queue in self._queues.items():
+                if prompt.startswith(first_line) and queue:
+                    return queue.popleft()
+            raise AssertionError(f"no scripted reply queued for: {prompt[:80]!r}")
