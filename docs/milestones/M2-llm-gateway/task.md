@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | T-1 to T-11a done; T-12 (acceptance) awaiting the owner |
+| **Status** | Accepted by the owner on 2026-09-28. Merged to `master`, tagged `m2` |
 | **Date** | 2026-09-28 |
 | **Specs and plan** | [`specs-plan.md`](specs-plan.md) (approved 2026-09-28; pre-development corrections in its §7.1) |
 | **Branch** | `m2-llm-gateway`, from `master` |
@@ -25,7 +25,7 @@ Each task is about half a day or less, is one commit when the owner asks for com
 | [x] | M2-T-10 | **Langfuse toggle.** Register LiteLLM's Langfuse callback once, on the first `call_llm`, only when `langfuse_enabled`; pass host and keys from `Settings`; `ConfigError` for a missing key or package | `bullpit/llm/gateway.py` | FR-14; D7 | Manual check below: defaults leave `litellm.success_callback` empty; enabled without keys raises `ConfigError` naming the variable | `8238552` |
 | [x] | M2-T-11 | **Measurement run.** `scripts/spikes/measure_tokens.py` (specs-plan §9.6); run once against real Groq, both pinned models | `scripts/spikes/measure_tokens.py`, this file (evidence) | FR-16; D-M2-10; AC-7 | Output pasted below; neither call flagged; both real totals below `llm_tpm_limit` | `4c685dc` |
 | [x] | M2-T-11a | **Pre-acceptance review fixes.** Groq's `json_validate_failed` rejection handled as an invalid reply (worst-case charge; no empty assistant turn on retry); 500/502/503 → `ProviderTransient`, any other provider error → `LLMUnavailable`; `llm_timeout_seconds` setting passed on every call; Langfuse keys checked before the package, naming exactly what's missing; `measure_tokens.py` uses `journal_url` | `bullpit/llm/gateway.py`, `bullpit/config.py`, `.env.example`, `bullpit/errors.py`, `tests/llm/test_gateway.py`, `scripts/spikes/measure_tokens.py`, `specs-plan.md` §7.2 | specs-plan §7.2 R11–R14; §12; architecture Part 3, Part 8 | Adapter and every-attempt tests pass; a Groq-rejected generation returns the flagged safe default through the real gateway; AC-7 re-run unchanged; Langfuse manual check shows the missing variable | `d9a7cdc` |
-| [ ] | M2-T-12 | **Acceptance.** Alembic schema check against `models.py`; ADR-0004 → `Accepted`; README quick start gains `uv run alembic upgrade head`; M0 finding C4 marked answered (pointing to M2-FR-4a); retrospective with the AC-7 numbers compared to architecture §14; then, when the owner asks: push, CI green, merge to `master`, tag `m2` | `docs/adr/0004-llm-response-cache-storage.md`, `README.md`, `docs/milestones/M0-foundations/findings.md`, this file | DoD §1.5; AC-7 | Owner accepts | pending |
+| [x] | M2-T-12 | **Acceptance.** Alembic schema check against `models.py`; ADR-0004 → `Accepted`; README quick start gains `uv run alembic upgrade head`; M0 finding C4 marked answered (pointing to M2-FR-4a); retrospective with the AC-7 numbers compared to architecture §14; then, when the owner asks: push, CI green, merge to `master`, tag `m2` | `docs/adr/0004-llm-response-cache-storage.md`, `README.md`, `docs/milestones/M0-foundations/findings.md`, this file | DoD §1.5; AC-7 | Owner accepts | merge commit on `master`, tag `m2` |
 
 ## Traceability
 
