@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Green light given 2026-09-29; implementation in progress |
+| **Status** | All 15 tasks complete (2026-09-29); awaiting the owner's acceptance against the AC-1 to AC-15 criteria before merge and tag |
 | **Date** | 2026-09-29 |
 | **Specs and plan** | [`specs-plan.md`](specs-plan.md) (Part A and Part B approved 2026-09-29; full offline test coverage, D-M4-14) |
 | **Branch** | `m4-debate-trader-risk`, from `master` |
@@ -26,7 +26,7 @@ Each task is about half a day or less, is one commit when the owner asks for com
 | [x] | M4-T-11 | **Journal and runner.** Add `Request.outcome` and `no_trade_reason`, `DebateTurnRecord` and `RecommendationRecord`; migration `0003_debate_recommendations` (batch mode); `_finalize` writes the M4 rows in the same transaction. Plus `test_migrations.py` | `bullpit/journal/models.py`, `bullpit/journal/migrations/versions/0003_debate_recommendations.py`, `bullpit/runners/request.py`, `tests/journal/test_migrations.py` | FR-17, FR-19; §10; AC-10 | `test_migrations.py` passes (no schema diff after `0001`–`0003`) | 5d0f828 |
 | [x] | M4-T-12 | **CLI.** `bullpit request` prints the turns, the attempts and the `OUTCOME:` line (FR-18). Plus `test_cli.py` | `bullpit/cli.py`, `tests/test_cli.py` | FR-18; AC-14 | `test_cli.py` passes | d6dd778 |
 | [x] | M4-T-13 | **Graph tests.** `RecordingLLM` answers the four M4 templates with per-test scripts and counts calls per template; the graph tests' settings raise `llm_tpm_limit`. Tests: buy path (with a `T99` citation), weak signals, veto limit, trader no-trade, Stage A block, flagged debate turn, M4 node exception, each with its journal rows | `tests/test_graph.py` | AC-4, AC-6, AC-8, AC-12 | All graph tests pass; the whole suite runs in under a minute | de9d123 |
-| [ ] | M4-T-14 | **Real runs and tokens.** AC-7: AAPL, MSFT and JPM at 2024-10-18 (backtest) plus one live request. Read one transcript in full; get per-template tokens from `llm_calls`; compare the per-request large-model total with §14; re-derive `llm_output_allowance_tokens` per FR-21 (`test_prompts.py` re-checks the ceiling with the new value); re-run one request to confirm nothing is flagged. AC-10: paste one request's M4 rows | `bullpit/config.py`, `.env.example`, `tests/test_config.py` (if the allowance default is asserted), this file (evidence) | AC-7, AC-10; FR-21; C14 | Evidence pasted below; every check passes | |
+| [x] | M4-T-14 | **Real runs and tokens.** AC-7: AAPL, MSFT and JPM at 2024-10-18 (backtest) plus one live request. Read one transcript in full; get per-template tokens from `llm_calls`; compare the per-request large-model total with §14; re-derive `llm_output_allowance_tokens` per FR-21 (`test_prompts.py` re-checks the ceiling with the new value); re-run one request to confirm nothing is flagged. AC-10: paste one request's M4 rows | `bullpit/config.py`, `.env.example`, `tests/test_config.py` (if the allowance default is asserted), this file (evidence) | AC-7, AC-10; FR-21; C14 | Evidence pasted below; every check passes | 7cb86d0 |
 | [ ] | M4-T-15 | **Acceptance.** Add what a full request prints to the README quick start. Write the retrospective (token numbers against §14, veto and flag rates, test count and suite time, carry-overs). Then, when the owner asks: push, CI green, merge to `master`, tag `m4` | `README.md`, this file | DoD §1.5 | Owner accepts | |
 
 ## Traceability
@@ -109,4 +109,19 @@ Per-request **large-model** total (debate + trader, + review when reached): AAPL
 
 ## Retrospective
 
-*(Written in T-15.)*
+**What changed from the plan.** Nothing in scope changed; two things surfaced during implementation that the plan didn't anticipate and were handled inline rather than deferred:
+
+- **Response-cache interaction with the veto loop (T-13).** When a scripted test always vetoes with the *same* trader recommendation, the risk-review prompt is textually identical every round (it doesn't carry veto history, D-M4-11 -- only the trader's prompt does), so `call_llm`'s cache serves rounds 2 and 3 without a real completion call. This is correct system behaviour, not a bug: the veto is still applied three times and the outcome is still right. `test_veto_limit` was adjusted to assert on the three `recommendations` rows (the logical count) rather than on raw completion-function invocations, and the reasoning is left as a comment in the test.
+- **Windows console encoding (T-14).** The first real live run crashed with `UnicodeEncodeError` the moment a real LLM's free text contained a character outside Windows' legacy `cp1252` console codepage (a `U+2011` non-breaking hyphen in a debate claim). `bullpit/cli.py` now reconfigures `stdout`/`stderr` to UTF-8 with `errors="replace"` at import time. Every M2-M3 fixture-driven test used ASCII-only scripted text, so nothing caught this until a real model actually ran on this machine -- a good example of why AC-7's "read a real transcript" step exists.
+
+**Measured numbers (AC-7, FR-21; full detail in Evidence above).** Four real runs on the pinned models (AAPL, MSFT, JPM backtest at 2024-10-18; AAPL live) all completed, none flagged. Per-request large-model tokens (9.8K-12.7K) came in *under* [architecture §14](../../architecture.md#14-free-tier-budget)'s 18-22K estimate, not over -- the 150-word turn cap and `low` reasoning effort are doing their job. `llm_output_allowance_tokens` moved from M3's 1869 to **1743**, still leaving the largest real prompt (`trader.md`, 4533 tokens) over 1,700 tokens of headroom under the 8K ceiling.
+
+**Veto and flag rates.** Across the 4 real runs, only JPM reached Stage B (the other three ended "no trade" at the trader), and its one real review call **shrank** the order (44 -> 30 shares) rather than vetoing -- too small a sample to say anything about how often the reviewer vetoes in practice; that's `test_graph.py::TestVetoLimit`'s job (a scripted, deterministic always-veto run) and, properly, M7's. Zero flagged replies across every real call in all 4 runs. One fabricated evidence citation appeared (the bear's `BOARD` id, JPM round 2) and was caught correctly: marked `unsupported` in state, in the `debate_turns` row, and labelled `[unsupported]` in the next prompt.
+
+**Test count and suite time.** 168 automated tests (up from M3's 138 -- T-2 through T-13 added 30: `test_config.py`'s M4 cases, `test_sizing.py`, `test_rules.py`, the four `tests/agents/*` node-test files, `test_prompts.py`, `test_migrations.py`, `test_cli.py`, and the seven new `test_graph.py` classes), full suite in **~9-11s** locally, well under the ~1 minute policy ceiling (dev-plan §7.4). No network calls (`pytest-socket` enforced, per D-M4-14's full-coverage instruction going beyond dev-plan §7's normal "necessary testing only" scope for this milestone).
+
+**Carry-overs to later milestones** (all already named in the specs-plan, restated here for the acceptance record):
+
+- The loss-warning function (`risk.rules.loss_warning`) is built and unit-tested but not yet wired to a real equity history -- M6 feeds it simulated `equity_snapshots`, M8 live ones (D-M4-9, C16).
+- Backtest-mode sizing still reads today's real Alpaca paper account, not a simulated one -- M4's backtest numbers check the logic, not results (D-M4-12, carried from D-M3-6). This is why the same three tickers can be re-run at will without a shared simulated cash balance draining.
+- Stage A checks cash at the reference price; the real entry fills at the next session's open, so a gap could in principle push cost over cash. M6 reserves cash and downsizes; M8's staleness check and a cash re-check at approval cover live mode (noted, not changed, in the specs-plan).
