@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Revision 3, 2026-09-30. Revision 2: the owner asked for `task.md` and a crafted, interactive UI (Q1: yes); re-checked against the code and the installed libraries ([§7.1](#71-corrections-found-in-the-final-check)); UI design direction added ([§9.6](#96-ui-design-direction)). Revision 3: the owner chose **TradingView Lightweight Charts** over Recharts (deviation **D14**, D-M8-22) and asked for the remaining problems to be decided; the new dependencies were resolved for real (§7.1). Revision 4: the pre-start review found five gaps, now fixed and decided on the owner's instruction ([§7.2](#72-revision-4-gaps-found-in-the-pre-start-review), D-M8-25 to D-M8-31, review questions R1 to R5 in §8). [`task.md`](task.md) is updated to match. **Ready for the owner's green light** |
+| **Status** | Revision 3, 2026-09-30. Revision 2: the owner asked for `task.md` and a crafted, interactive UI (Q1: yes); re-checked against the code and the installed libraries ([§7.1](#71-corrections-found-in-the-final-check)); UI design direction added ([§9.6](#96-ui-design-direction)). Revision 3: the owner chose **TradingView Lightweight Charts** over Recharts (deviation **D14**, D-M8-22) and asked for the remaining problems to be decided; the new dependencies were resolved for real (§7.1). Revision 4: the pre-start review found five gaps, now fixed and decided on the owner's instruction ([§7.2](#72-revision-4-gaps-found-in-the-pre-start-review), D-M8-25 to D-M8-31, review questions R1 to R5 in §8). [`task.md`](task.md) is updated to match. Revision 5 (during M8-T-5): `AlpacaBroker.get_order` dropped (R6). **In progress** |
 | **Date** | 2026-09-30 |
 | **Size** | XL. Written as one `specs-plan.md` on the owner's instruction, as M3, M4 and M6 were (D-M8-1). [Dev-plan §1.2](../../dev-plan.md#12-per-milestone-documents) would otherwise ask for separate `specs.md` and `plan.md` |
 | **Branch** | `m8-live-mode`, from `master` (M7 merged and tagged `m7`, merge `d61985e`) |
@@ -34,7 +34,7 @@ The real product loop on Alpaca paper. The owner starts a request from the dashb
 
 | # | Item | Source |
 |---|---|---|
-| S1 | `broker/alpaca.py` write side: `submit_bracket_order` (market, whole shares, GTC, stop and take-profit legs, `client_order_id` from `request_id`, idempotent) and `get_order` with its legs. `AlpacaBroker` becomes an `OrderBroker` | Part 14; ADR-0002; D-M6-2 |
+| S1 | `broker/alpaca.py` write side: `submit_bracket_order` (market, whole shares, GTC, stop and take-profit legs, `client_order_id` from `request_id`, idempotent) and `find_order` / `get_live_order`, which read an order with its legs. `AlpacaBroker` has the order side of `OrderBroker` except `get_order`, which needs a reference price only the journal holds (revision 5, R6) | Part 14; ADR-0002; D-M6-2 |
 | S2 | ADR-0007: exits are anchored to the reference price (the last close at `as_of`) in both modes, checked against Alpaca's leg validation with one real rejected order | dev-plan M8 |
 | S3 | `approval/gate.py`: the owner's decision, shares that can only go down, the rules re-checked (net of pending orders, D-M8-25), the 2% staleness check, the one-trading-day expiry, the loss-warning confirmation. Pure | Part 13 |
 | S4 | Graph: an `approval` node (`interrupt()`) and an `execute` node after the report, for live buys only, with a SQLite checkpointer | Part 13; §8 |
@@ -65,7 +65,7 @@ The real product loop on Alpaca paper. The owner starts a request from the dashb
 
 - **M8-FR-1 Submit.** `AlpacaBroker.submit_bracket_order(order, client_order_id, submitted_on)` sends one market buy of `order.shares` whole shares, `time_in_force = GTC`, `order_class = bracket`, take-profit limit `order.take_profit` and stop `order.stop_loss` (both already whole cents), with the given `client_order_id`. It returns a `Trade` with status `pending` and the Alpaca order and leg IDs.
 - **M8-FR-2 Idempotent submit.** If Alpaca answers `client_order_id must be unique`, or the call fails in a way that leaves it unknown whether the order was accepted (timeout, connection error, 5xx), the broker looks the order up by `client_order_id` and returns it. Only if no such order exists does it raise `BrokerRejected` with Alpaca's message ([§11.3](#113-idempotent-submit)).
-- **M8-FR-3 Read an order.** `get_order(client_order_id)` reads the order with its legs and maps it to a `Trade` ([§11.4](#114-alpaca-order-to-trade)): `pending` (entry not filled), `open` (entry filled, no leg filled), `closed` (a leg filled: exit reason `stop` or `target`, exit price the leg's average fill price), `cancelled` (entry cancelled, expired or rejected, with the reason). Entry and exit dates are the New York date of the fill.
+- **M8-FR-3 Read an order.** `find_order(client_order_id, submitted_on, reference_price)` (and `get_live_order(trade)`, which takes both from the journal row) reads the order with its legs and maps it to a `Trade` ([§11.4](#114-alpaca-order-to-trade)): `pending` (entry not filled), `open` (entry filled, no leg filled), `closed` (a leg filled: exit reason `stop` or `target`, exit price the leg's average fill price), `cancelled` (entry cancelled, expired or rejected, with the reason). Entry and exit dates are the New York date of the fill.
 - **M8-FR-4 Paper only.** The write side is reached only through `make_trading_client`, so the M0 paper guard runs before any order call. Nothing in M8 adds a way around it.
 
 **Approval gate (architecture Part 13)**
@@ -91,7 +91,7 @@ The real product loop on Alpaca paper. The owner starts a request from the dashb
 
 **Fill check (architecture Part 14; C9, C16)**
 
-- **M8-FR-13 Trades.** For every live trade that isn't `closed` or `cancelled`, the fill check reads the order through `get_order` and updates the `trades` row: entry date and price, shares actually filled, exit date, price and reason, P&L = (exit − entry) × shares. It only records: it never places, cancels or changes an order.
+- **M8-FR-13 Trades.** For every live trade that isn't `closed` or `cancelled`, the fill check reads the order through `get_live_order` and updates the `trades` row: entry date and price, shares actually filled, exit date, price and reason, P&L = (exit − entry) × shares. It only records: it never places, cancels or changes an order.
 - **M8-FR-14 Manual close.** An `open` trade whose legs were both cancelled (none filled, none active) and after which a sell of that ticker filled was closed by hand (architecture §9). It's recorded `closed` with exit reason `manual`, at the price and date of the **first filled sell of that ticker that isn't a bracket leg, filled at or after the later leg's cancel time** (D-M8-10). The rule reads orders only, so it works whether or not other shares of the ticker are held. Legs cancelled and no such sell → the trade stays `open` and the check reports *"open trade without active exits"* (dev-plan §9 risk).
 - **M8-FR-15 Equity.** The fill check upserts live `equity_snapshots` rows (`run_id` NULL, one per session date) from Alpaca's daily portfolio history, from the last session on or before `as_of − loss_warning_days` through the latest one (D-M8-9).
 - **M8-FR-16 When it runs.** `POST /fill-check`, `bullpit fill-check`, and the dashboard calls it once each time it's opened. No scheduler (C9). It returns the trades it changed, the snapshots written, and its warnings.
@@ -178,7 +178,6 @@ def live_order(order: alpaca.trading.models.Order, *, submitted_on: date,
 class AlpacaBroker:
     def submit_bracket_order(self, order: SizedOrder, *, client_order_id: str,
                              submitted_on: date) -> Trade: ...     # FR-1, FR-2
-    def get_order(self, client_order_id: str) -> Trade: ...        # FR-3; unknown → BrokerRejected
     def find_order(self, client_order_id: str, *, submitted_on: date,
                    reference_price: Decimal) -> LiveOrder | None: ...  # 404 → None (FR-2, FR-9)
     def get_live_order(self, trade: Trade) -> LiveOrder: ...       # for the fill check
@@ -373,6 +372,7 @@ Checked again against `SimBroker`, `risk/rules.py`, M0's findings and ADR-0002. 
 | **R3** | A recorded approval resent after expiry: order it, or expire it? | **Neither blindly**: record the order if Alpaca has it, otherwise expire with a reason and order nothing. D-M8-27 |
 | **R4** | If Alpaca accepts the inverted bracket, what does AC-13 become? | **A probe**: either outcome is recorded. D-M8-29, with the gate's check D-M8-28 |
 | **R5** | Split task 14? | **Yes**, into reading (T-14) and deciding (T-15). D-M8-31 |
+| **R6** | `AlpacaBroker.get_order(client_order_id)` (FR-3) can't build a `Trade`: it needs the report's `reference_price`, which Alpaca doesn't hold, and nothing in M8 calls it | **Dropped** (owner, at M8-T-5). `find_order` and `get_live_order` cover every read; `OrderBroker` is unchanged for the simulated broker; the live wiring is typed `AlpacaBroker` |
 
 Nothing is open. Every other choice above is a default with its reason; say if you want any changed.
 
