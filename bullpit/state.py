@@ -1,6 +1,6 @@
 """The shared graph state (architecture Part 0; M3 specs-plan sec5).
 
-`RequestState` holds only M3's fields; M4-M8 add theirs as they're built
+`RequestState` holds only the fields built so far; later milestones add theirs
 (D-M3-4) -- CLAUDE.md forbids placeholder code for types that don't exist
 yet. Every field crossing a graph node is typed (dev-plan.md sec2.2).
 """
@@ -15,6 +15,7 @@ from pydantic import BaseModel
 
 from bullpit.domain import Account, ExitStyle, Position, SizedOrder
 from bullpit.llm.schemas import DebatePoint, Evidence, Signal
+from bullpit.report.model import Report
 from bullpit.tools.fundamentals import FundamentalsMetrics
 from bullpit.tools.indicators import Indicators
 
@@ -115,3 +116,4 @@ class RequestState(BaseModel):
     sized_order: SizedOrder | None = None  # the final order; set iff outcome == "buy"
     outcome: Literal["buy", "no_trade"] | None = None
     no_trade_reason: str | None = None
+    report: Report | None = None

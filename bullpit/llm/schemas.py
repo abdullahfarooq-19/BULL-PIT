@@ -89,3 +89,15 @@ class RiskReviewReply(BaseModel):
         if self.decision == "shrink" and self.shares is None:
             raise ValueError("a 'shrink' decision requires 'shares'")
         return self
+
+
+class ReportProse(BaseModel):
+    """Report writer LLM reply (M5-FR-5): the plain-language parts only. The
+    four debate fields are empty strings when there was no debate."""
+
+    summary: str
+    strongest_bull: str
+    strongest_bear: str
+    bull_conceded: str
+    unresolved: str
+    would_change_view: str
