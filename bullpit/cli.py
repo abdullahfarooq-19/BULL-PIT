@@ -5,6 +5,7 @@ the graph long before the dashboard).
 
 from __future__ import annotations
 
+import sys
 from datetime import date
 from pathlib import Path
 from typing import Annotated, Literal, cast
@@ -21,6 +22,14 @@ from bullpit.errors import BullPitError, ConfigError
 from bullpit.journal.db import journal_url, make_engine, make_sessions
 from bullpit.logging import configure_logging
 from bullpit.runners.request import run_request
+from bullpit.state import RequestState
+
+# LLM text (M4's debate/report prose) can contain characters outside
+# Windows' legacy console codepage (e.g. U+2011 non-breaking hyphen); print
+# it rather than crash the CLI on a UnicodeEncodeError (found running M4-T-14).
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 
 app = typer.Typer(add_completion=False, help="Bull Pit: research, not financial advice.")
 
@@ -60,6 +69,49 @@ def _upgrade_journal_schema(settings: Settings) -> None:
     cfg.set_main_option("script_location", str(_MIGRATIONS_DIR))
     cfg.set_main_option("sqlalchemy.url", journal_url(settings))
     alembic_command.upgrade(cfg, "head")
+
+
+def _print_debate_and_outcome(result: RequestState) -> None:
+    """M4-FR-18: each debate turn, each trader attempt, then the OUTCOME line."""
+    for turn in result.debate:
+        flag = " [FLAGGED]" if turn.flagged else ""
+        typer.echo(f"{turn.side} round {turn.round}: conviction {turn.conviction:.2f}{flag}")
+        for point in turn.points:
+            ids = ", ".join(point.evidence_ids) if point.evidence_ids else "no IDs"
+            suffix = " [unsupported]" if point.unsupported else ""
+            typer.echo(f"  {point.claim} ({ids}){suffix}")
+        for concession in turn.concessions:
+            typer.echo(f"  concedes: {concession}")
+
+    for index, attempt in enumerate(result.attempts, start=1):
+        recommendation = attempt.recommendation
+        flag = " [FLAGGED]" if recommendation.flagged else ""
+        typer.echo(
+            f"attempt {index}: {recommendation.action} "
+            f"{recommendation.target_weight:.2%} {recommendation.exit_style} "
+            f"(confidence {recommendation.confidence:.2f}){flag}"
+        )
+        if attempt.sized_order is not None:
+            order = attempt.sized_order
+            typer.echo(
+                f"  sized: {order.shares} shares @ ref {order.reference_price:.2f}, "
+                f"stop {order.stop_loss:.2f}, take-profit {order.take_profit:.2f} "
+                f"(set by {order.limit})"
+            )
+        elif attempt.blocked_reason is not None:
+            typer.echo(f"  blocked: {attempt.blocked_reason}")
+        if attempt.verdict is not None:
+            typer.echo(f"  review: {attempt.verdict.decision} - {attempt.verdict.reason}")
+
+    if result.outcome == "buy" and result.sized_order is not None:
+        order = result.sized_order
+        typer.echo(
+            f"OUTCOME: BUY {order.shares} {result.ticker} @ ref {order.reference_price:.2f}, "
+            f"stop {order.stop_loss:.2f}, take-profit {order.take_profit:.2f}, "
+            f"max loss {order.max_loss:.2f}, gain {order.max_gain:.2f} (set by {order.limit})"
+        )
+    elif result.outcome == "no_trade":
+        typer.echo(f"OUTCOME: NO TRADE: {result.no_trade_reason}")
 
 
 @app.command()
@@ -142,6 +194,8 @@ def request(
     typer.echo(f"route: {result.route}")
     for warning in result.warnings:
         typer.echo(f"warning: {warning}")
+
+    _print_debate_and_outcome(result)
 
 
 if __name__ == "__main__":

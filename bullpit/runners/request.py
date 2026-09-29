@@ -20,10 +20,10 @@ from bullpit.broker.base import Broker
 from bullpit.clock import Clock, utc_now
 from bullpit.config import Settings
 from bullpit.graph import Deps, build_graph
-from bullpit.journal.models import Request, SignalRecord
+from bullpit.journal.models import DebateTurnRecord, RecommendationRecord, Request, SignalRecord
 from bullpit.llm.gateway import CompletionFn, litellm_completion
 from bullpit.logging import get_logger
-from bullpit.state import RequestState
+from bullpit.state import RequestState, TradeAttempt
 
 logger = get_logger(__name__)
 
@@ -146,6 +146,34 @@ def _acquire_lock(
     return None
 
 
+def _recommendation_record(
+    request_id: str, index: int, attempt: TradeAttempt, *, final_order: Any | None
+) -> RecommendationRecord:
+    recommendation = attempt.recommendation
+    verdict = attempt.verdict
+    return RecommendationRecord(
+        request_id=request_id,
+        attempt=index,
+        action=recommendation.action,
+        exit_style=recommendation.exit_style,
+        target_weight=str(recommendation.target_weight),
+        confidence=recommendation.confidence,
+        decisive_evidence=list(recommendation.decisive_evidence),
+        reasoning=recommendation.reasoning,
+        flagged=recommendation.flagged,
+        sized_order=None
+        if attempt.sized_order is None
+        else attempt.sized_order.model_dump(mode="json"),
+        blocked_reason=attempt.blocked_reason,
+        review_decision=None if verdict is None else verdict.decision,
+        review_reason=None if verdict is None else verdict.reason,
+        review_shares=None if verdict is None else verdict.requested_shares,
+        review_clamped=None if verdict is None else verdict.clamped,
+        review_flagged=None if verdict is None else verdict.flagged,
+        final_order=final_order,
+    )
+
+
 def _finalize(
     sessions: sessionmaker[Session],
     *,
@@ -174,6 +202,8 @@ def _finalize(
         row.git_commit = _git_commit()
         row.price_source = None if result is None or result.prices is None else result.prices.source
         row.finished_at = _naive_utc_now()
+        row.outcome = None if result is None else result.outcome
+        row.no_trade_reason = None if result is None else result.no_trade_reason
 
         if result is not None:
             for signal in (
@@ -193,6 +223,34 @@ def _finalize(
                         flagged=signal.flagged,
                         note=signal.note,
                     )
+                )
+
+            for turn in result.debate:
+                session.add(
+                    DebateTurnRecord(
+                        request_id=request_id,
+                        round=turn.round,
+                        side=turn.side,
+                        points=[point.model_dump() for point in turn.points],
+                        concessions=list(turn.concessions),
+                        conviction=turn.conviction,
+                        word_count=turn.word_count,
+                        unsupported_count=sum(1 for point in turn.points if point.unsupported),
+                        over_word_limit=turn.over_word_limit,
+                        flagged=turn.flagged,
+                    )
+                )
+
+            last_index = len(result.attempts) - 1
+            for index, attempt in enumerate(result.attempts):
+                is_winning_attempt = result.outcome == "buy" and index == last_index
+                final_order = (
+                    result.sized_order.model_dump(mode="json")
+                    if is_winning_attempt and result.sized_order is not None
+                    else None
+                )
+                session.add(
+                    _recommendation_record(request_id, index + 1, attempt, final_order=final_order)
                 )
 
         session.commit()

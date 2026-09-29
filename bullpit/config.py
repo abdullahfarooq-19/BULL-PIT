@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 from datetime import date
+from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
 
@@ -68,12 +69,25 @@ class Settings(BaseSettings):
     llm_small_model_cutoff: date = date(2024, 6, 30)
     llm_large_model_cutoff: date = date(2024, 6, 30)
 
+    # --- Debate, trader and risk manager (M4) ------------------------------
+    debate_rounds: int = 2
+    debate_turn_max_words: int = 150
+    risk_per_trade_pct: Decimal = Decimal("0.01")
+    max_position_pct: Decimal = Decimal("0.10")
+    exit_stop_atr_tight: Decimal = Decimal("1.5")
+    exit_stop_atr_normal: Decimal = Decimal("2")
+    exit_stop_atr_wide: Decimal = Decimal("3")
+    exit_reward_risk: Decimal = Decimal("1.5")
+    risk_max_vetoes: int = 2
+    loss_warning_pct: Decimal = Decimal("0.05")
+    loss_warning_days: int = 7
+
     # --- LLM gateway (M2) -------------------------------------------------
     llm_reasoning_effort_small: str = "low"
     llm_reasoning_effort_large: str = "low"
     llm_rpm_limit: int = 30
     llm_tpm_limit: int = 8000
-    llm_output_allowance_tokens: int = 1869
+    llm_output_allowance_tokens: int = 1743
     llm_daily_token_budget: int = 200_000
     llm_max_retries: int = 5
     llm_backoff_base_seconds: float = 1.0

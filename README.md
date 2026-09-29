@@ -49,8 +49,25 @@ needs fixing, without ever printing a secret.
 
 `bullpit request` prints the account snapshot, each analyst's signal with
 its evidence, the signals board's score and conflict, and the route
-(`debate` or `no_trade`) -- the first half of the graph; the debate,
-trader and risk manager arrive in M4.
+(`debate` or `no_trade`). When the route is `debate`, it goes on to print
+each bull/bear turn (points with their evidence IDs, `[unsupported]` if a
+citation doesn't check out, concessions, conviction), each trader attempt
+(the recommendation, the sized order or the block reason, the risk
+manager's decision and reason), and a final line:
+
+```text
+OUTCOME: BUY 30 JPM @ ref 225.37, stop 216.94, take-profit 238.01, max loss 252.90, gain 379.20 (set by target)
+```
+
+or, when the recommendation is to stand aside:
+
+```text
+OUTCOME: NO TRADE: Trader recommended no trade: ...
+```
+
+The report generator (M5) turns this into the readable report you decide
+from; the approval gate, order placement and journal read-back arrive in
+M6 and M8.
 
 ## Development commands
 

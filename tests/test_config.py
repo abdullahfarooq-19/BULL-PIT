@@ -1,0 +1,33 @@
+"""Settings defaults match the architecture's values (M4-AC-15)."""
+
+from __future__ import annotations
+
+from decimal import Decimal
+
+from bullpit.config import Settings
+
+
+def _settings() -> Settings:
+    return Settings(_env_file=None)  # type: ignore[call-arg]
+
+
+class TestM4SettingDefaults:
+    def test_debate_defaults(self) -> None:
+        settings = _settings()
+        assert settings.debate_rounds == 2
+        assert settings.debate_turn_max_words == 150
+
+    def test_risk_defaults(self) -> None:
+        settings = _settings()
+        assert settings.risk_per_trade_pct == Decimal("0.01")
+        assert settings.max_position_pct == Decimal("0.10")
+        assert settings.risk_max_vetoes == 2
+        assert settings.loss_warning_pct == Decimal("0.05")
+        assert settings.loss_warning_days == 7
+
+    def test_exit_table_defaults(self) -> None:
+        settings = _settings()
+        assert settings.exit_stop_atr_tight == Decimal("1.5")
+        assert settings.exit_stop_atr_normal == Decimal("2")
+        assert settings.exit_stop_atr_wide == Decimal("3")
+        assert settings.exit_reward_risk == Decimal("1.5")

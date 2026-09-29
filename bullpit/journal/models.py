@@ -49,6 +49,8 @@ class Request(Base):
     git_commit: Mapped[str | None] = mapped_column(default=None)
     price_source: Mapped[str | None] = mapped_column(default=None)  # yfinance | alpaca
     finished_at: Mapped[datetime | None] = mapped_column(default=None)
+    outcome: Mapped[str | None] = mapped_column(default=None)  # buy | no_trade (M4-FR-19)
+    no_trade_reason: Mapped[str | None] = mapped_column(default=None)
 
 
 class SignalRecord(Base):
@@ -65,6 +67,50 @@ class SignalRecord(Base):
     evidence: Mapped[list[dict[str, str]]] = mapped_column(JSON)
     flagged: Mapped[bool]
     note: Mapped[str | None] = mapped_column(default=None)
+
+
+class DebateTurnRecord(Base):
+    """One bull or bear turn (M4-FR-19; sec10)."""
+
+    __tablename__ = "debate_turns"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    request_id: Mapped[str] = mapped_column(ForeignKey("requests.id"), index=True)
+    round: Mapped[int]
+    side: Mapped[str]
+    points: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
+    concessions: Mapped[list[str]] = mapped_column(JSON)
+    conviction: Mapped[float]
+    word_count: Mapped[int]
+    unsupported_count: Mapped[int]
+    over_word_limit: Mapped[bool]
+    flagged: Mapped[bool]
+
+
+class RecommendationRecord(Base):
+    """One trader attempt and what followed it: Stage A, Stage B (M4-FR-19;
+    sec10). Up to `risk_max_vetoes + 1` rows per request."""
+
+    __tablename__ = "recommendations"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    request_id: Mapped[str] = mapped_column(ForeignKey("requests.id"), index=True)
+    attempt: Mapped[int]
+    action: Mapped[str]
+    exit_style: Mapped[str]
+    target_weight: Mapped[str]  # Decimal as a string (SQLite has no exact decimal)
+    confidence: Mapped[float]
+    decisive_evidence: Mapped[list[str]] = mapped_column(JSON)
+    reasoning: Mapped[str]
+    flagged: Mapped[bool]  # the trader reply was invalid
+    sized_order: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
+    blocked_reason: Mapped[str | None] = mapped_column(default=None)
+    review_decision: Mapped[str | None] = mapped_column(default=None)
+    review_reason: Mapped[str | None] = mapped_column(default=None)
+    review_shares: Mapped[int | None] = mapped_column(default=None)
+    review_clamped: Mapped[bool | None] = mapped_column(default=None)
+    review_flagged: Mapped[bool | None] = mapped_column(default=None)
+    final_order: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
 
 
 class LLMCall(Base):
