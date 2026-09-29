@@ -78,6 +78,35 @@ Each task is about half a day or less, is one commit when the owner asks for com
 
 (Filled in by T-3, T-12 and T-17.)
 
+### T-3: real Alpaca shapes (2026-09-29, market closed, paper account, symbol F)
+
+Raw responses were recorded by a throwaway script (deleted) and saved, with nothing to redact (no account ID appears in any order), as `tests/fixtures/alpaca/*.json`. A 1-share GTC bracket at ±5% of the last IEX trade ($12.31) was submitted, re-submitted, read back, cancelled and read again; the account has no test order left (the one open order is the M0 spike's take-profit leg on F).
+
+| Question | Real answer | Effect on the plan |
+|---|---|---|
+| Duplicate `client_order_id` | HTTP **422**, `{"code":42210000,"message":"client_order_id must be unique"}` (M0 A8 saw the same text with another code) | Match on the message text, as §11.3 says, not on the code |
+| Unknown `client_order_id` | HTTP **404**, `{"code":40410000,"message":"order not found for <id>"}` | `find_order` returns `None` on 404 |
+| Are legs included by `get_order_by_client_id`? | **Yes**, both legs, with their statuses | The `nested=True` re-read of §7.1 is not needed and is **not written** (no speculative code) |
+| Order after submit, market closed | Entry `accepted`; legs `held` (`limit` and `stop` types) | Entry not `filled` → `pending` |
+| After cancel | Parent and both legs `canceled`, each with its own `canceled_at` (within a millisecond), `filled_qty` 0 | `exits_cancelled_at` = the later leg `canceled_at` |
+| Leg fields | `type` `limit` (take-profit, `limit_price`) or `stop` (`stop_price`); `filled_avg_price`, `filled_at`, `canceled_at`; leg `client_order_id`s are random UUIDs; `Order` has no `parent_order_id` | Legs are told apart by `type` |
+| Legs in listings | `get_orders(status=closed, symbols=[F], nested=False)` returns each leg as a **top-level sell** (7 rows); with `nested=True` only the 3 parents, legs inside | `first_sell_fill` lists with `nested=True`, so bracket legs never look like a manual sell |
+| Filled entry with live legs (the M0 spike order) | Entry `filled`, `filled_avg_price` 12.57; take-profit leg `new`, stop leg `held` | `exits_active` counts `new`, `accepted`, `held`, `pending_new` |
+| Portfolio history (`period=1M`, `timeframe=1D`) | Parallel arrays `timestamp` (epoch seconds), `equity`, `profit_loss`, `profit_loss_pct`, plus `base_value`. Each stamp is **00:00 UTC of the day after the session** (a Friday session is stamped Saturday, a Monday one Tuesday); days before the account was funded have `equity` **0.0** | `equity_history` takes the **New York date** of each stamp (= the session date) and **skips zero-equity points**, since the loss warning divides by the base equity |
+| Latest IEX trade | `{"F": {"price": 12.31, "timestamp": ..., "size": 500.0, ...}}` | `Decimal(str(price))` |
+
+Derived fixtures (real shapes with only these fields changed; the M8-AC-6 and AC-7 real runs replace them where they can):
+
+| File | Derived from | Fields changed |
+|---|---|---|
+| `order_stop_filled.json` | `order_open.json` | stop leg `status` `filled`, `filled_qty` 1, `filled_avg_price` 11.94, `filled_at`; take-profit leg `status` `canceled`, `canceled_at` |
+| `order_target_filled.json` | `order_open.json` | take-profit leg `filled` at 13.19 with `filled_at`; stop leg `canceled` with `canceled_at` |
+| `order_legs_cancelled.json` | `order_open.json` | both legs `canceled` with `canceled_at` (entry still filled) |
+| `order_partial.json` | `order_open.json` | `qty` 2, `status` `partially_filled`, `filled_qty` 1, `filled_at` null; legs `qty` 2, `held` |
+| `closed_orders_manual_sell.json` | `order_open.json` | adds a simple market `sell` order, `filled` at 12.40; the M0 spike parent stays |
+
+Real, unchanged: `order_pending.json`, `order_open.json`, `order_entry_cancelled.json`, `error_duplicate_client_order_id.json`, `error_order_not_found.json`, `portfolio_history.json`, `latest_trade.json`, `closed_orders_nested.json`.
+
 ## Retrospective
 
 (Written in T-18.)
