@@ -242,7 +242,7 @@ def build_report(
         ],
         debate=_debate_summary(state, prose),
         attempts=[row.model_copy(update={"review_reason": None}) for row in rows],
-        loss_warning=None,
+        loss_warning=state.loss_warning,
         would_change_view=None if rejected or prose is None else prose.would_change_view,
         market=None if rejected else market,
         data_notes=_data_notes(state, models),
