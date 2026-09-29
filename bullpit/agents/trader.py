@@ -5,6 +5,7 @@ D-M4-7).
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from decimal import Decimal
 
 from sqlalchemy.orm import Session, sessionmaker
@@ -13,7 +14,7 @@ from bullpit.agents.debate import evidence_list, final_conviction, signals_summa
 from bullpit.config import Settings
 from bullpit.domain import ExitStyle
 from bullpit.llm.gateway import CompletionFn, Role, call_llm, litellm_completion
-from bullpit.llm.schemas import TraderReply
+from bullpit.llm.schemas import Evidence, TraderReply
 from bullpit.state import Recommendation, RequestState, TradeAttempt
 
 _TEMPLATE = "trader.md"
@@ -32,13 +33,76 @@ _EXIT_STYLE_SETTINGS: dict[ExitStyle, str] = {
 }
 
 
-def _exit_style_descriptions(settings: Settings) -> list[str]:
+def exit_style_descriptions(settings: Settings) -> list[str]:
+    """One line per exit style: its stop and target in ATR multiples."""
     lines = []
     for style, field_name in _EXIT_STYLE_SETTINGS.items():
         stop_mult: Decimal = getattr(settings, field_name)
         take_profit_mult = stop_mult * settings.exit_reward_risk
         lines.append(f"{style}: stop {stop_mult} ATR below, target {take_profit_mult} ATR above")
     return lines
+
+
+def recommendation_from_reply(
+    reply: TraderReply, *, ticker: str, registry: Mapping[str, Evidence], settings: Settings
+) -> tuple[Recommendation, list[str]]:
+    """The code checks on a valid reply (M4-FR-6): the weight is clamped to the
+    per-stock cap and cited evidence IDs are kept only if registered. Returns
+    the recommendation and a warning for each correction."""
+    warnings: list[str] = []
+    target_weight = Decimal(str(reply.target_weight))
+    clamped_weight = min(max(target_weight, Decimal("0")), settings.max_position_pct)
+    if clamped_weight != target_weight:
+        warnings.append(f"trader target weight {target_weight:.4f} clamped to {clamped_weight:.4f}")
+
+    decisive = [eid for eid in reply.decisive_evidence if eid in registry]
+    dropped = [eid for eid in reply.decisive_evidence if eid not in registry]
+    if dropped:
+        warnings.append(f"trader decisive evidence dropped (not registered): {', '.join(dropped)}")
+
+    recommendation = Recommendation(
+        ticker=ticker,
+        action=reply.action,
+        target_weight=clamped_weight,
+        exit_style=reply.exit_style,
+        confidence=reply.confidence,
+        decisive_evidence=decisive,
+        reasoning=reply.reasoning,
+        flagged=False,
+    )
+    return recommendation, warnings
+
+
+def invalid_recommendation(ticker: str) -> Recommendation:
+    """The "no trade" recorded when a reply stayed invalid after the retry."""
+    return Recommendation(
+        ticker=ticker,
+        action="no_trade",
+        target_weight=Decimal("0"),
+        exit_style="normal",
+        confidence=0.0,
+        decisive_evidence=[],
+        reasoning="",
+        flagged=True,
+    )
+
+
+def attempt_update(
+    state: RequestState, recommendation: Recommendation, warnings: list[str], *, actor: str
+) -> dict[str, object]:
+    """The state update for one recommendation: the attempt is appended, and a
+    "no trade" (or an invalid reply) ends the request."""
+    update: dict[str, object] = {
+        "attempts": [*state.attempts, TradeAttempt(recommendation=recommendation)],
+        "warnings": [*state.warnings, *warnings],
+    }
+    if recommendation.flagged:
+        update["outcome"] = "no_trade"
+        update["no_trade_reason"] = f"{actor} reply was invalid."
+    elif recommendation.action == "no_trade":
+        update["outcome"] = "no_trade"
+        update["no_trade_reason"] = f"{actor} recommended no trade: {recommendation.reasoning}"
+    return update
 
 
 def _veto_lines(attempts: list[TradeAttempt]) -> list[str]:
@@ -89,7 +153,7 @@ def trader_node(
             "held_value": held_value,
             "held_pct": float(held_pct),
             "max_target_weight_pct": float(settings.max_position_pct * 100),
-            "exit_styles": _exit_style_descriptions(settings),
+            "exit_styles": exit_style_descriptions(settings),
             "vetoes": _veto_lines(state.attempts),
         },
         TraderReply,
@@ -101,53 +165,9 @@ def trader_node(
     )
 
     if result.flagged:
-        recommendation = Recommendation(
-            ticker=state.ticker,
-            action="no_trade",
-            target_weight=Decimal("0"),
-            exit_style="normal",
-            confidence=0.0,
-            decisive_evidence=[],
-            reasoning="",
-            flagged=True,
-        )
-        return {
-            "attempts": [*state.attempts, TradeAttempt(recommendation=recommendation)],
-            "outcome": "no_trade",
-            "no_trade_reason": "Trader reply was invalid.",
-        }
+        return attempt_update(state, invalid_recommendation(state.ticker), [], actor="Trader")
 
-    reply = result.value
-    warnings: list[str] = []
-
-    target_weight = Decimal(str(reply.target_weight))
-    clamped_weight = min(max(target_weight, Decimal("0")), settings.max_position_pct)
-    if clamped_weight != target_weight:
-        warnings.append(f"trader target weight {target_weight:.4f} clamped to {clamped_weight:.4f}")
-
-    decisive = [eid for eid in reply.decisive_evidence if eid in state.board.evidence]
-    dropped = [eid for eid in reply.decisive_evidence if eid not in state.board.evidence]
-    if dropped:
-        warnings.append(f"trader decisive evidence dropped (not registered): {', '.join(dropped)}")
-
-    recommendation = Recommendation(
-        ticker=state.ticker,
-        action=reply.action,
-        target_weight=clamped_weight,
-        exit_style=reply.exit_style,
-        confidence=reply.confidence,
-        decisive_evidence=decisive,
-        reasoning=reply.reasoning,
-        flagged=False,
+    recommendation, warnings = recommendation_from_reply(
+        result.value, ticker=state.ticker, registry=state.board.evidence, settings=settings
     )
-    attempt = TradeAttempt(recommendation=recommendation)
-
-    if reply.action == "no_trade":
-        return {
-            "attempts": [*state.attempts, attempt],
-            "warnings": [*state.warnings, *warnings],
-            "outcome": "no_trade",
-            "no_trade_reason": f"Trader recommended no trade: {reply.reasoning}",
-        }
-
-    return {"attempts": [*state.attempts, attempt], "warnings": [*state.warnings, *warnings]}
+    return attempt_update(state, recommendation, warnings, actor="Trader")

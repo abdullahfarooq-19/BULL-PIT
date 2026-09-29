@@ -147,6 +147,12 @@ class BacktestRun(Base):
     status: Mapped[str]  # running | paused | stopped | completed
     status_reason: Mapped[str | None] = mapped_column(default=None)
     checkpoint: Mapped[date | None] = mapped_column(default=None)  # last completed decision day
+    policy: Mapped[str] = mapped_column(
+        default="bullpit", server_default="bullpit"
+    )  # bullpit | single_agent | always_buy | ma_rule | bullpit_fixed (M7)
+    source_run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("backtest_runs.id"), default=None
+    )  # bullpit_fixed only: the run whose decisions it replays
 
 
 class ApprovalRecord(Base):

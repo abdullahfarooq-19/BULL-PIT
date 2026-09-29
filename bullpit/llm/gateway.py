@@ -157,7 +157,9 @@ def _cache_key(
 
 
 def _cache_path(settings: Settings, model: str, cache_key: str) -> Path:
-    slug = model.replace("/", "_")
+    slug = model.replace("/", "_").replace(
+        ":", "_"
+    )  # OpenRouter's ":free" is illegal in a Windows path
     return settings.data_cache_dir / "llm" / slug / f"{cache_key}.json"
 
 
@@ -449,8 +451,25 @@ def reset_langfuse_registration() -> None:
 # --- The real provider (the only code that touches LiteLLM) ----------------
 
 
+def _provider_call(request: CompletionRequest, settings: Settings) -> dict[str, object]:
+    """The provider-specific LiteLLM arguments (M7-FR-13, D13). The free Qwen
+    route on OpenRouter accepts neither `seed` nor `response_format`."""
+    if settings.llm_provider == "openrouter":
+        return {
+            "model": f"openrouter/{request.model}",
+            "api_key": settings.require("OPENROUTER_API_KEY"),
+        }
+    return {
+        "model": f"groq/{request.model}",
+        "api_key": settings.require("GROQ_API_KEY"),
+        "seed": request.seed,
+        "response_format": {"type": "json_object"},
+    }
+
+
 def litellm_completion(request: CompletionRequest) -> CompletionReply:
-    """Call Groq through LiteLLM; no LiteLLM exception leaves this function.
+    """Call the configured provider through LiteLLM; no LiteLLM exception
+    leaves this function.
 
     429 -> `RateLimited`; timeout, connection error, 500/502/503 ->
     `ProviderTransient` (both retried by the caller). A JSON-mode generation
@@ -459,17 +478,14 @@ def litellm_completion(request: CompletionRequest) -> CompletionReply:
     not retried.
     """
     settings = get_settings()
-    api_key = settings.require("GROQ_API_KEY")
+    provider_args = _provider_call(request, settings)
     try:
         response = litellm.completion(
-            model=f"groq/{request.model}",
-            api_key=api_key,
+            **provider_args,
             messages=request.messages,
             temperature=request.temperature,
-            seed=request.seed,
             reasoning_effort=request.reasoning_effort,
             max_tokens=request.max_tokens,
-            response_format={"type": "json_object"},
             timeout=settings.llm_timeout_seconds,
         )
     except RateLimitError as exc:

@@ -19,7 +19,7 @@ _TEMPLATE = "technical.md"
 _SAFE_DEFAULT = AnalystVerdict(direction="neutral", confidence=0.0)
 
 
-def _bars_frame(bars: list[Bar]) -> pd.DataFrame:
+def bars_frame(bars: list[Bar]) -> pd.DataFrame:
     frame = pd.DataFrame(
         {
             "open": [bar.open for bar in bars],
@@ -99,7 +99,7 @@ def technical_node(
     if state.prices is None:
         raise ValueError("technical_node runs after request_check populates prices")
 
-    indicators = compute_indicators(_bars_frame(state.prices.bars))
+    indicators = compute_indicators(bars_frame(state.prices.bars))
     evidence = evidence_from_indicators(indicators)
 
     result = call_llm(
