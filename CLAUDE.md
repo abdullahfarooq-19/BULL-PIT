@@ -32,7 +32,7 @@ If code and docs disagree, the docs win until the owner approves a change. Any c
 - **Money:** `Decimal` for prices and dollar amounts in sizing, exits, broker and journal code; whole-share integers.
 - **No magic numbers.** Every threshold (1% risk, 10% cap, 2% staleness, ATR multipliers, etc.) is a named setting in `bullpit/config.py`, defaulting to the architecture's value.
 - **Typed state.** Everything crossing a graph node is a Pydantic model.
-- **LLM calls go through `bullpit/llm/gateway.py` only.** Models are pinned: `openai/gpt-oss-20b` (small) and `openai/gpt-oss-120b` (large) on Groq. The free tier caps each call at about 8K tokens including reasoning, so keep prompts compact.
+- **LLM calls go through `bullpit/llm/gateway.py` only.** Models are pinned: `openai/gpt-oss-20b` (small) and `openai/gpt-oss-120b` (large) on Groq. The free tier caps each call at about 8K tokens including reasoning, so keep prompts compact. Exception (D13): M7's evaluation AI runs use `qwen/qwen3.8-27b:free` on OpenRouter (`LLM_PROVIDER=openrouter`).
 - **Backtest window starts 2024-07-01 or later** (models' June 2024 training cutoff).
 
 ## Code quality: write it like a professional

@@ -19,6 +19,7 @@
 | v2.2 | 2026-09-28 | **D10:** the fundamentals LLM judges the filing-based ratios only; P/E, which moves with the daily price, is computed by code on every request and passed to the debate and report as evidence, so the per-filing cache can never reuse a verdict formed with a later price (Part 6). **D11:** code writes every evidence fact; the analyst LLMs judge direction and confidence (sentiment: per-headline scores) without writing numbers (Part 5). |
 | v2.3 | 2026-09-29 | **M5:** the free-tier budget (§14) now uses tokens measured on real requests (about 15K per debated request against the earlier 25–30K estimate). No behaviour change. |
 | v2.4 | 2026-09-29 | **D12:** the simulated broker checks stop-loss and take-profit on the entry day too, using that day's low and high, stop first (Part 14). **M6 done-when** (§16): a resumable backtest proven on the pinned models with a real pause and resume; the 26-week run moves to M7 because the free daily quota can't cover it in one day. |
+| v2.5 | 2026-09-30 | **D13:** M7's AI runs use `qwen/qwen3.8-27b:free` on OpenRouter for both roles, over a window after its 2026-08-14 release (§12, §13); the pinned gpt-oss models stay the default. **M7 done-when** (§16): a pilot results table for all four approaches; repeat runs, the full 26-week run and debate impact are carried over. |
 
 Implementation-level decisions that don't change the system's behaviour (deviations D1–D7) are recorded in [`dev-plan.md` §3](dev-plan.md#3-deviations-from-the-architecture-roadmap).
 
@@ -645,7 +646,7 @@ All baselines use the same stocks, dates, sizing rules, exit rules, and slippage
 
 Plus **buy and hold** for each stock over the window, as a market reference.
 
-**Repeat runs:** each LLM setup runs at least 3 times with fresh seeds, and results are reported as an average with a range.
+**Repeat runs:** each LLM setup runs at least 3 times with fresh seeds, and results are reported as an average with a range. *(D13: the M7 pilot has one run per approach, on a model that takes no seed; the repeats, the full 26-week run and the debate-impact metric are carried over.)*
 
 > **Limits to state in the report:** a few stocks over a few months is a small sample, so differences may be luck. Paper and simulated fills approximate real execution.
 
@@ -660,7 +661,7 @@ Everything is free. Nothing needs a GPU, so it runs on an 8 GB RAM laptop.
 | Language | Python 3.11+ | Every library below is Python |
 | Agent orchestration | LangGraph | Graph of nodes, parallel analysts, pause for approval (`interrupt`), saved state (checkpointer) |
 | LLM access | LiteLLM | One interface for all providers |
-| LLM models | Groq free tier, pinned: `openai/gpt-oss-20b` (small: analysts, sentiment scoring, report) and `openai/gpt-oss-120b` (large: debate, trader, risk review) | Fast, free, open-weight, published June 2024 training cutoff |
+| LLM models | *(M7's AI runs only, D13: `qwen/qwen3.8-27b:free` on OpenRouter for both roles.)* Groq free tier, pinned: `openai/gpt-oss-20b` (small: analysts, sentiment scoring, report) and `openai/gpt-oss-120b` (large: debate, trader, risk review) | Fast, free, open-weight, published June 2024 training cutoff |
 | Structured output | Pydantic v2 | Validates every agent reply |
 | Data processing | pandas, NumPy | Indicators, ATR, ratios, sizing in plain, testable code |
 | Prices and market context | yfinance (Alpaca market data as backup) | Free daily history, SPY and VIX |
@@ -751,7 +752,7 @@ bull-pit/
 | M4 | Debate, trader, risk manager with sizing and exits | A complete sized recommendation with stop-loss and take-profit |
 | M5 | Report generator | A readable report for both "buy" and "no trade" |
 | M6 | Simulated broker with bracket exits, journal, backtest runner | A resumable backtest runs on the pinned models, paused and resumed for real (the 26-week run is M7's headline run) |
-| M7 | Evaluation and baselines | A results table for all four approaches, with repeat runs |
+| M7 | Evaluation and baselines | A pilot results table for all four approaches (2 stocks × 2 weeks, one seed, Qwen); repeat runs, the full run and debate impact are carried over (D13) |
 | M8 | Live mode: dashboard request, approval, bracket orders, fill check | One live request is approved, fills, and later exits, all recorded |
 | M9 | Dashboard polish and README | A stranger can understand the system and its results from the repo |
 
