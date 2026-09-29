@@ -1,5 +1,6 @@
-"""CLI tests (M4-AC-14): `bullpit request` prints the FR-18 debate turns,
-attempts and OUTCOME line for a buy and for a no-trade result, exiting 0.
+"""CLI tests (M4-AC-14, M5-AC-10): `bullpit request` prints the FR-18 debate
+turns, attempts and OUTCOME line for a buy and for a no-trade result, and
+the Markdown report under `=== REPORT ===`, exiting 0.
 
 `run_request` and everything around it (journal schema upgrade, engine,
 sessions, the broker, logging) are patched out: this only checks the CLI's
@@ -8,7 +9,7 @@ own formatting of an already-built `RequestState`.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from unittest.mock import patch
 
@@ -17,6 +18,7 @@ from typer.testing import CliRunner
 from bullpit.cli import app
 from bullpit.config import Settings
 from bullpit.domain import Account, SizedOrder
+from bullpit.report.builder import build_report
 from bullpit.state import (
     CheckedPoint,
     DebateTurn,
@@ -152,3 +154,22 @@ class TestRequestCommandPrintsM4Output:
         assert (
             "OUTCOME: NO TRADE: Signals too weak for a debate (board score +0.03, no conflict)."
         ) in result.output
+
+
+class TestRequestCommandPrintsReport:
+    def test_buy_prints_the_report(self) -> None:
+        state = _buy_state()
+        report = build_report(
+            state,
+            prose=None,
+            prose_source="none",
+            market=None,
+            models=[],
+            generated_at=datetime(2024, 10, 18, 21, 0, tzinfo=UTC),
+        )
+
+        result = _invoke(state.model_copy(update={"report": report}))
+
+        assert result.exit_code == 0, result.output
+        assert "=== REPORT ===" in result.output
+        assert "32 shares, about $5,824.00 (5.8% of equity)" in result.output

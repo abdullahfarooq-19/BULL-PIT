@@ -1,6 +1,6 @@
 """The graph end to end, with recorded fixtures, a fake broker and a fake
 completion function (M3-AC-1 automated, AC-5, AC-6, AC-7, AC-9; M4-AC-4,
-AC-6, AC-8, AC-12).
+AC-6, AC-8, AC-12; M5-AC-8).
 """
 
 from __future__ import annotations
@@ -21,16 +21,18 @@ from sqlalchemy.orm import Session, sessionmaker
 from bullpit.clock import SimClock
 from bullpit.config import Settings
 from bullpit.domain import Account, Asset, Position
-from bullpit.errors import LLMUnavailable, QuotaExhausted
+from bullpit.errors import DataUnavailable, LLMUnavailable, QuotaExhausted
 from bullpit.journal.models import (
     DebateTurnRecord,
     LLMCall,
     RecommendationRecord,
+    ReportRecord,
     Request,
     SignalRecord,
 )
 from bullpit.llm.gateway import CompletionReply, CompletionRequest
 from bullpit.runners.request import run_request
+from bullpit.state import RequestState
 from tests.agents.conftest import (
     FIRST_LINE_BEAR,
     FIRST_LINE_BULL,
@@ -60,6 +62,17 @@ _DEFAULT_TRADER_REPLY = json.dumps(
     }
 )
 _DEFAULT_REVIEW_REPLY = json.dumps({"decision": "approve", "reason": "Sizing looks sound."})
+_FIRST_LINE_REPORT = "You are the report writer"
+_DEFAULT_REPORT_REPLY = json.dumps(
+    {
+        "summary": "The trend supports the recommendation (T1).",
+        "strongest_bull": "The trend is intact (T1).",
+        "strongest_bear": "The news is a risk.",
+        "bull_conceded": "The bull conceded the momentum risk.",
+        "unresolved": "How much the news matters.",
+        "would_change_view": "A break of the trend.",
+    }
+)
 
 
 @pytest.fixture
@@ -123,7 +136,7 @@ class RecordingLLM:
     """Answers by which fixed first line the prompt starts with, since the
     three analysts call in parallel and arrive in any order (plan sec13);
     records every rendered prompt. The three M3 analyst replies are fixed
-    per instance; the four M4 templates can be scripted per test with
+    per instance; the M4 and M5 templates can be scripted per test with
     `queue()` (consumed first, in order) and otherwise fall back to a
     sensible default (bullish debate point, a 6% normal buy, an approve).
     """
@@ -185,6 +198,8 @@ class RecordingLLM:
             content = self.trader_reply
         elif prompt.startswith(FIRST_LINE_RISK_REVIEW):
             content = self.review_reply
+        elif prompt.startswith(_FIRST_LINE_REPORT):
+            content = _DEFAULT_REPORT_REPLY
         else:
             raise AssertionError(f"unrecognised prompt: {prompt[:80]!r}")
 
@@ -231,6 +246,24 @@ def _recommendation_rows(
             .order_by(RecommendationRecord.id)
             .all()
         )
+
+
+def _report_rows(sessions: sessionmaker[Session], request_id: str) -> list[ReportRecord]:
+    with sessions() as session:
+        return list(session.query(ReportRecord).filter(ReportRecord.request_id == request_id).all())
+
+
+def _assert_report(
+    sessions: sessionmaker[Session], result: RequestState, outcome: str, prose_source: str = "llm"
+) -> None:
+    """M5-AC-8: the request ends with a report in state and one `reports` row."""
+    assert result.report is not None
+    assert result.report.outcome == outcome
+    assert result.report.prose_source == prose_source
+    rows = _report_rows(sessions, result.request_id)
+    assert len(rows) == 1
+    assert rows[0].report["request_id"] == result.request_id
+    assert rows[0].report["outcome"] == outcome
 
 
 class TestDebateRoute:
@@ -325,6 +358,11 @@ class TestDebateRoute:
             assert journal_row.route == "debate"
             assert journal_row.outcome == "buy"
 
+        _assert_report(sessions, result, "buy")
+        assert sum(p.startswith(_FIRST_LINE_REPORT) for p in llm.prompts) == 1
+        assert result.report is not None
+        assert result.report.order == result.sized_order
+
 
 class TestWeakSignalsRouteToNoTrade:
     def test_all_neutral_routes_to_no_trade(
@@ -355,10 +393,11 @@ class TestWeakSignalsRouteToNoTrade:
         assert result.attempts == []
 
         rows = _llm_calls(sessions, result.request_id)
-        assert len(rows) == 3  # the three analysts only: no debate/trader/review calls
+        assert len(rows) == 4  # three analysts and the report writer: no debate/trader/review
 
         assert _debate_turn_rows(sessions, result.request_id) == []
         assert _recommendation_rows(sessions, result.request_id) == []
+        _assert_report(sessions, result, "no_trade")
 
         with sessions() as session:
             journal_row = session.get(Request, result.request_id)
@@ -409,6 +448,7 @@ class TestVetoLimit:
         assert len(recommendation_rows) == 3
         assert all(row.review_decision == "veto" for row in recommendation_rows)
         assert all(row.final_order is None for row in recommendation_rows)
+        _assert_report(sessions, result, "no_trade")
 
 
 class TestTraderNoTrade:
@@ -448,6 +488,7 @@ class TestTraderNoTrade:
         assert len(recommendation_rows) == 1
         assert recommendation_rows[0].sized_order is None
         assert recommendation_rows[0].blocked_reason is None
+        _assert_report(sessions, result, "no_trade")
 
 
 class TestStageABlock:
@@ -479,6 +520,7 @@ class TestStageABlock:
         assert len(recommendation_rows) == 1
         assert recommendation_rows[0].blocked_reason is not None
         assert recommendation_rows[0].blocked_reason.startswith("Per-stock cap reached")
+        _assert_report(sessions, result, "no_trade")
 
 
 class TestFlaggedDebateTurn:
@@ -515,6 +557,7 @@ class TestFlaggedDebateTurn:
         flagged_rows = [row for row in turn_rows if row.side == "bear" and row.round == 1]
         assert len(flagged_rows) == 1
         assert flagged_rows[0].flagged is True
+        _assert_report(sessions, result, "buy")
 
 
 class TestFailedAnalyst:
@@ -645,6 +688,130 @@ class TestM4NodeException:
         assert result.rejection is None
         assert len(result.debate) == 4
         assert len(_debate_turn_rows(sessions, result.request_id)) == 4
+
+
+class TestRejectedRequest:
+    def test_request_check_rejection_gets_a_free_code_only_report(
+        self, settings: Settings, sessions: sessionmaker[Session]
+    ) -> None:
+        """M5-FR-8: no LLM call and no market-data fetch for a bad request."""
+        llm = RecordingLLM()
+        with (
+            _patch_sec(),
+            _patch_prices(),
+            _patch_news(),
+            patch("bullpit.graph.get_market_context") as market_fetch,
+        ):
+            result = run_request(
+                "ZZZZ",
+                "backtest",
+                SimClock(AS_OF),
+                settings=settings,
+                sessions=sessions,
+                broker=_fake_broker(settings),
+                completion_fn=llm,
+            )
+
+        assert result.rejection is not None
+        _assert_report(sessions, result, "rejected", prose_source="none")
+        assert result.report is not None
+        assert result.report.summary == f"Rejected: {result.rejection}"
+        assert result.report.market is None
+        assert llm.prompts == []
+        assert _llm_calls(sessions, result.request_id) == []
+        market_fetch.assert_not_called()
+
+
+class TestReportStepErrors:
+    def test_llm_unavailable_falls_back_and_completes(
+        self, settings: Settings, sessions: sessionmaker[Session]
+    ) -> None:
+        with (
+            _patch_sec(),
+            _patch_prices(),
+            _patch_news(),
+            patch("bullpit.report.builder.call_llm", side_effect=LLMUnavailable("forced")),
+        ):
+            result = run_request(
+                "AAPL",
+                "backtest",
+                SimClock(AS_OF),
+                settings=settings,
+                sessions=sessions,
+                broker=_fake_broker(settings),
+                completion_fn=RecordingLLM(),
+            )
+
+        _assert_report(sessions, result, "buy", prose_source="fallback")
+        assert result.report is not None
+        assert any("forced" in w for w in result.report.data_notes.warnings)
+        with sessions() as session:
+            journal_row = session.get(Request, result.request_id)
+            assert journal_row is not None
+            assert journal_row.status == "completed"
+
+    def test_market_data_failure_is_a_warning_not_a_failure(
+        self, settings: Settings, sessions: sessionmaker[Session]
+    ) -> None:
+        """M5-AC-6: section 8 says "not available" and the request completes."""
+        with (
+            _patch_sec(),
+            _patch_prices(),
+            _patch_news(),
+            patch("bullpit.graph.get_market_context", side_effect=DataUnavailable("no SPY")),
+        ):
+            result = run_request(
+                "AAPL",
+                "backtest",
+                SimClock(AS_OF),
+                settings=settings,
+                sessions=sessions,
+                broker=_fake_broker(settings),
+                completion_fn=RecordingLLM(),
+            )
+
+        _assert_report(sessions, result, "buy")
+        assert result.report is not None
+        assert result.report.market is not None
+        assert result.report.market.explanation == "Market context not available."
+        assert any("no SPY" in w for w in result.report.data_notes.warnings)
+
+    def test_quota_exhausted_fails_the_request_and_releases_the_lock(
+        self, settings: Settings, sessions: sessionmaker[Session]
+    ) -> None:
+        with (
+            _patch_sec(),
+            _patch_prices(),
+            _patch_news(),
+            patch("bullpit.report.builder.call_llm", side_effect=QuotaExhausted("forced")),
+            pytest.raises(QuotaExhausted),
+        ):
+            run_request(
+                "AAPL",
+                "backtest",
+                SimClock(AS_OF),
+                settings=settings,
+                sessions=sessions,
+                broker=_fake_broker(settings),
+                completion_fn=RecordingLLM(),
+            )
+
+        with sessions() as session:
+            failed = session.query(Request).filter(Request.ticker == "AAPL").one()
+            assert failed.status == "failed"
+            assert session.query(ReportRecord).count() == 0
+
+        with _patch_sec(), _patch_prices(), _patch_news():
+            result = run_request(
+                "AAPL",
+                "backtest",
+                SimClock(AS_OF),
+                settings=settings,
+                sessions=sessions,
+                broker=_fake_broker(settings),
+                completion_fn=RecordingLLM(),
+            )
+        assert result.rejection is None
 
 
 class TestNoFutureDataReachesAPrompt:

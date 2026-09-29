@@ -20,7 +20,13 @@ from bullpit.broker.base import Broker
 from bullpit.clock import Clock, utc_now
 from bullpit.config import Settings
 from bullpit.graph import Deps, build_graph
-from bullpit.journal.models import DebateTurnRecord, RecommendationRecord, Request, SignalRecord
+from bullpit.journal.models import (
+    DebateTurnRecord,
+    RecommendationRecord,
+    ReportRecord,
+    Request,
+    SignalRecord,
+)
 from bullpit.llm.gateway import CompletionFn, litellm_completion
 from bullpit.logging import get_logger
 from bullpit.state import RequestState, TradeAttempt
@@ -251,6 +257,13 @@ def _finalize(
                 )
                 session.add(
                     _recommendation_record(request_id, index + 1, attempt, final_order=final_order)
+                )
+
+            if result.report is not None:
+                session.add(
+                    ReportRecord(
+                        request_id=request_id, report=result.report.model_dump(mode="json")
+                    )
                 )
 
         session.commit()

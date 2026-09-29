@@ -1,5 +1,5 @@
 """`alembic upgrade head` produces a schema matching journal/models.py
-(M4-AC-10): covers migrations 0001-0003.
+(M4-AC-10): covers migrations 0001-0004 (M5-AC-9).
 
 `env.py` always derives the target URL from `get_settings()` (M2 specs-plan
 sec9.5: app and migrations share one path), not from the `Config` object,
