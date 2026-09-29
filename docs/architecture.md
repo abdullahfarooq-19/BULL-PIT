@@ -18,6 +18,7 @@
 | v2.1 | 2026-09-28 | **D8:** the brain's debate-or-skip routing is done by code, not an LLM (Part 4, §19). **D9:** LLM models changed from Groq Llama 3.1 8B / 3.3 70B to Groq **gpt-oss-20b / gpt-oss-120b** (June 2024 training cutoff), so the backtest window now starts **2024-07-01 or later** (§10, §13, §14, §16, §17, §19). Free-tier budget rewritten for the new models' limits (§14). |
 | v2.2 | 2026-09-28 | **D10:** the fundamentals LLM judges the filing-based ratios only; P/E, which moves with the daily price, is computed by code on every request and passed to the debate and report as evidence, so the per-filing cache can never reuse a verdict formed with a later price (Part 6). **D11:** code writes every evidence fact; the analyst LLMs judge direction and confidence (sentiment: per-headline scores) without writing numbers (Part 5). |
 | v2.3 | 2026-09-29 | **M5:** the free-tier budget (§14) now uses tokens measured on real requests (about 15K per debated request against the earlier 25–30K estimate). No behaviour change. |
+| v2.4 | 2026-09-29 | **D12:** the simulated broker checks stop-loss and take-profit on the entry day too, using that day's low and high, stop first (Part 14). **M6 done-when** (§16): a resumable backtest proven on the pinned models with a real pause and resume; the 26-week run moves to M7 because the free daily quota can't cover it in one day. |
 
 Implementation-level decisions that don't change the system's behaviour (deviations D1–D7) are recorded in [`dev-plan.md` §3](dev-plan.md#3-deviations-from-the-architecture-roadmap).
 
@@ -447,7 +448,7 @@ Both brokers are classes with the same functions (`get_account`, `get_position`,
 #### Simulated broker (backtest)
 
 - Enters at the **next trading day's open**, worsened by 0.05% slippage.
-- Each later day, it checks that day's low and high. If the low reaches the stop-loss, the trade exits at the stop price. If the high reaches the take-profit, it exits there. If both happen on the same day, it assumes the stop-loss came first. This is the cautious choice, because daily data can't tell the real order.
+- On the entry day and each later day, it checks that day's low and high. If the low reaches the stop-loss, the trade exits at the stop price. If the high reaches the take-profit, it exits there. If both happen on the same day, it assumes the stop-loss came first. This is the cautious choice, because daily data can't tell the real order.
 - If the price opens past an exit level (a gap), it exits at the open price, which is worse, as it would in reality.
 - Trades still open when the backtest window ends are valued at the last close and reported separately.
 
@@ -749,7 +750,7 @@ bull-pit/
 | M3 | Request check, three analysts, signals board, brain routing | Valid signals for any stock on any past date |
 | M4 | Debate, trader, risk manager with sizing and exits | A complete sized recommendation with stop-loss and take-profit |
 | M5 | Report generator | A readable report for both "buy" and "no trade" |
-| M6 | Simulated broker with bracket exits, journal, backtest runner | A resumable 26-week backtest completes on the pinned models |
+| M6 | Simulated broker with bracket exits, journal, backtest runner | A resumable backtest runs on the pinned models, paused and resumed for real (the 26-week run is M7's headline run) |
 | M7 | Evaluation and baselines | A results table for all four approaches, with repeat runs |
 | M8 | Live mode: dashboard request, approval, bracket orders, fill check | One live request is approved, fills, and later exits, all recorded |
 | M9 | Dashboard polish and README | A stranger can understand the system and its results from the repo |
