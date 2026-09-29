@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | All 15 tasks complete (2026-09-29); awaiting the owner's acceptance against the AC-1 to AC-15 criteria before merge and tag |
+| **Status** | Accepted and merged to `master`, tagged `m4` (merge commit `47f20ac`) |
 | **Date** | 2026-09-29 |
 | **Specs and plan** | [`specs-plan.md`](specs-plan.md) (Part A and Part B approved 2026-09-29; full offline test coverage, D-M4-14) |
 | **Branch** | `m4-debate-trader-risk`, from `master` |
@@ -27,7 +27,7 @@ Each task is about half a day or less, is one commit when the owner asks for com
 | [x] | M4-T-12 | **CLI.** `bullpit request` prints the turns, the attempts and the `OUTCOME:` line (FR-18). Plus `test_cli.py` | `bullpit/cli.py`, `tests/test_cli.py` | FR-18; AC-14 | `test_cli.py` passes | d6dd778 |
 | [x] | M4-T-13 | **Graph tests.** `RecordingLLM` answers the four M4 templates with per-test scripts and counts calls per template; the graph tests' settings raise `llm_tpm_limit`. Tests: buy path (with a `T99` citation), weak signals, veto limit, trader no-trade, Stage A block, flagged debate turn, M4 node exception, each with its journal rows | `tests/test_graph.py` | AC-4, AC-6, AC-8, AC-12 | All graph tests pass; the whole suite runs in under a minute | de9d123 |
 | [x] | M4-T-14 | **Real runs and tokens.** AC-7: AAPL, MSFT and JPM at 2024-10-18 (backtest) plus one live request. Read one transcript in full; get per-template tokens from `llm_calls`; compare the per-request large-model total with §14; re-derive `llm_output_allowance_tokens` per FR-21 (`test_prompts.py` re-checks the ceiling with the new value); re-run one request to confirm nothing is flagged. AC-10: paste one request's M4 rows | `bullpit/config.py`, `.env.example`, `tests/test_config.py` (if the allowance default is asserted), this file (evidence) | AC-7, AC-10; FR-21; C14 | Evidence pasted below; every check passes | 7cb86d0 |
-| [ ] | M4-T-15 | **Acceptance.** Add what a full request prints to the README quick start. Write the retrospective (token numbers against §14, veto and flag rates, test count and suite time, carry-overs). Then, when the owner asks: push, CI green, merge to `master`, tag `m4` | `README.md`, this file | DoD §1.5 | Owner accepts | |
+| [x] | M4-T-15 | **Acceptance.** Add what a full request prints to the README quick start. Write the retrospective (token numbers against §14, veto and flag rates, test count and suite time, carry-overs). Then, when the owner asks: push, CI green, merge to `master`, tag `m4` | `README.md`, this file | DoD §1.5 | Owner accepts | `47f20ac` |
 
 ## Traceability
 

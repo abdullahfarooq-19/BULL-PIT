@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Revision 5: all decisions resolved; M4 in progress |
+| **Status** | Revision 5: all decisions resolved; M4 accepted, M5 next |
 | **Changes in revision 5** | D10 and D11 added ([§3](#3-deviations-from-the-architecture-roadmap)), approved with the M3 specs; `architecture.md` v2.2 |
 | **Date** | 2026-09-28 |
 | **Changes in revision 4** | Scope review of M1–M9 ([§10.1](#101-scope-review-revision-4)): work that doesn't change the architecture cut or simplified (C1–C13); token measurement, the pinned-model guard and the loss-warning wiring moved to the milestones that can actually do them (C14–C16). `architecture.md` unchanged |
