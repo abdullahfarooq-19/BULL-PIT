@@ -17,6 +17,7 @@
 | v2.0 | — | Original design (`Bull Pit v2_ architecture and workflow.html`), converted to Markdown with full coverage. |
 | v2.1 | 2026-09-28 | **D8:** the brain's debate-or-skip routing is done by code, not an LLM (Part 4, §19). **D9:** LLM models changed from Groq Llama 3.1 8B / 3.3 70B to Groq **gpt-oss-20b / gpt-oss-120b** (June 2024 training cutoff), so the backtest window now starts **2024-07-01 or later** (§10, §13, §14, §16, §17, §19). Free-tier budget rewritten for the new models' limits (§14). |
 | v2.2 | 2026-09-28 | **D10:** the fundamentals LLM judges the filing-based ratios only; P/E, which moves with the daily price, is computed by code on every request and passed to the debate and report as evidence, so the per-filing cache can never reuse a verdict formed with a later price (Part 6). **D11:** code writes every evidence fact; the analyst LLMs judge direction and confidence (sentiment: per-headline scores) without writing numbers (Part 5). |
+| v2.3 | 2026-09-29 | **M5:** the free-tier budget (§14) now uses tokens measured on real requests (about 15K per debated request against the earlier 25–30K estimate). No behaviour change. |
 
 Implementation-level decisions that don't change the system's behaviour (deviations D1–D7) are recorded in [`dev-plan.md` §3](dev-plan.md#3-deviations-from-the-architecture-roadmap).
 
@@ -686,19 +687,22 @@ Groq's published free-tier limits, checked on 2026-09-28, are the same for both 
 
 Check Groq's rate-limit page before relying on these, since they change.
 
-| Step | Calls | Model | Rough tokens |
+Measured on real runs (M5, 2026-09-29; input + output + reasoning, from `llm_calls`, a cached call counted at the tokens of its original call):
+
+| Step | Calls | Model | Measured tokens |
 |---|---|---|---|
-| Analysts | 3 (often 2, fundamentals cached) | small | ~5K |
-| Debate | 4 | large | ~12K |
-| Trader and risk review | 2 or more | large | ~6–10K |
-| Report text | 1 | small | ~3K |
-| **Total per request** | **~10** | | **~25–30K** (about 18–22K large, about 8K small) |
+| Analysts | 3 | small | ~2K |
+| Debate | 4 | large | ~7K |
+| Trader and risk review | 2 (1 if the trader says no trade) | large | ~2.4K for the trader, ~1.3K for the review |
+| Report text | 1 (2 with a retry) | small | ~2.5–2.7K |
+| **Total, debated request** | **9–10** | | **~15K** (about 10–11K large, about 4.5–7K small) |
+| **Total, weak signals (no debate)** | **4** | | **~2.8K** (all small) |
 
 - **Reasoning tokens.** Both gpt-oss models are reasoning models. Their hidden reasoning tokens count against the quota, on top of the estimates above. The gateway sets the lowest reasoning effort that gives valid output, and M2 measures the real cost.
 - **Per-call ceiling.** With an 8K tokens-per-minute limit, any single call larger than about 8K tokens (input, reasoning and output together) can never succeed. Every prompt is kept compact, and the gateway rejects a call that would go over the ceiling before sending it.
 - **Per-minute pacing.** A full request uses about three minutes of the large model's per-minute allowance, so a request takes a few minutes end to end. That's fine for on-demand use.
-- **Live:** the large model's daily quota is the binding limit. It allows about 8 to 10 full requests per day before reasoning overhead, so plan on about 5 to 8. That's plenty for personal use.
-- **Backtest:** 3 stocks × 26 weeks is about 78 requests, which could take roughly 8 to 16 days of quota for one full run. Moving every role onto the small model doesn't help, because both models have the same daily limit. Develop against recorded fixtures and the response cache, use short windows while debugging, and save full-length runs for results.
+- **Live:** the large model's daily quota is the binding limit. At about 11K large-model tokens per debated request it allows roughly 18 full requests per day, so plan on about 12 to 15 once retries and re-runs are counted. That's plenty for personal use.
+- **Backtest:** 3 stocks × 26 weeks is about 78 requests, or about 860K large-model tokens: roughly 5 days of quota for one full run, fewer where weak signals skip the debate. Moving every role onto the small model doesn't help, because both models have the same daily limit. Develop against recorded fixtures and the response cache, use short windows while debugging, and save full-length runs for results.
 - Skipping weak debates, caching fundamentals, short JSON outputs, and 150-word debate turns all reduce usage.
 - These are estimates. Measure real token counts early (M2) and re-plan.
 

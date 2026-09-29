@@ -65,9 +65,17 @@ or, when the recommendation is to stand aside:
 OUTCOME: NO TRADE: Trader recommended no trade: ...
 ```
 
-The report generator (M5) turns this into the readable report you decide
-from; the approval gate, order placement and journal read-back arrive in
-M6 and M8.
+After that it prints `=== REPORT ===` and the report you decide from, in
+Markdown: the recommendation and why (also for "no trade"), the suggested
+order with its stop-loss and take-profit, the analysts' evidence, the debate,
+the risk manager's limits and reasons, what would change the view, market
+context (SPY against its 200-day average, the VIX level), and data notes.
+Code writes every number. A small model writes only the plain-language
+sentences, and any number or evidence ID it adds that isn't already in the
+report gets the text rejected and rewritten once, then replaced by plain
+template sentences. The report is also saved to the journal (`reports`
+table) as JSON. The approval gate, order placement and journal read-back
+arrive in M6 and M8.
 
 ## Development commands
 
