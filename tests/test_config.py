@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from decimal import Decimal
+from pathlib import Path
 
 from bullpit.config import Settings
 
@@ -46,6 +47,15 @@ class TestM6SettingDefaults:
         assert settings.sim_slippage_pct == Decimal("0.0005")
         assert settings.backtest_starting_cash == Decimal("100000")
         assert settings.backtest_weeks == 26
+
+
+class TestM8SettingDefaults:
+    def test_live_mode_defaults(self) -> None:
+        settings = _settings()
+        assert settings.approval_staleness_pct == Decimal("0.02")
+        assert settings.api_port == 8000
+        assert settings.checkpoint_db_path == Path("checkpoints.db")
+        assert settings.results_dir == Path("docs/results")
 
 
 class TestM7SettingDefaults:

@@ -308,7 +308,9 @@ def backtest(
 @app.command(name="eval")
 def eval_command(
     runs: Annotated[str, typer.Option("--runs", help="Comma-separated completed run IDs")],
-    out: Annotated[Path, typer.Option("--out", help="Output directory")] = Path("docs/results"),
+    out: Annotated[
+        Path | None, typer.Option("--out", help="Output directory (default: RESULTS_DIR)")
+    ] = None,
 ) -> None:
     """Write results.md and the charts for finished backtest runs."""
     try:
@@ -321,7 +323,9 @@ def eval_command(
     _upgrade_journal_schema(settings)
     sessions = make_sessions(make_engine(journal_url(settings)))
     try:
-        path = evaluate(runs.split(","), out, settings=settings, sessions=sessions)
+        path = evaluate(
+            runs.split(","), out or settings.results_dir, settings=settings, sessions=sessions
+        )
     except ConfigError as exc:
         typer.echo(str(exc))
         raise typer.Exit(code=2) from None

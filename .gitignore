@@ -20,6 +20,8 @@ __pycache__/
 data_cache/
 logs/
 *.db
+checkpoints.db*
+web/.next/
 *.sqlite
 *.sqlite3
 scripts/spikes/output/
