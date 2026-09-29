@@ -15,11 +15,11 @@ from bullpit.domain import ExitStyle, SizedOrder, SizeLimit
 _CENT = Decimal("0.01")
 
 
-def _round_cent(value: Decimal) -> Decimal:
+def round_cent(value: Decimal) -> Decimal:
     return value.quantize(_CENT, rounding=ROUND_HALF_UP)
 
 
-def _floor_shares(value: Decimal) -> int:
+def floor_shares(value: Decimal) -> int:
     if value <= 0:
         return 0
     return int(value.to_integral_value(rounding=ROUND_FLOOR))
@@ -29,8 +29,8 @@ def exit_prices(
     reference: Decimal, atr: Decimal, *, stop_atr: Decimal, reward_risk: Decimal
 ) -> tuple[Decimal, Decimal]:
     """(stop_loss, take_profit), each rounded to the cent, half up."""
-    stop = _round_cent(reference - stop_atr * atr)
-    take_profit = _round_cent(reference + reward_risk * stop_atr * atr)
+    stop = round_cent(reference - stop_atr * atr)
+    take_profit = round_cent(reference + reward_risk * stop_atr * atr)
     return stop, take_profit
 
 
@@ -50,10 +50,10 @@ def share_limits(
     `stop < reference` (M4-FR-9 checks both before this is called)."""
     risk_per_share = reference - stop
     return {
-        "target": _floor_shares(target_weight * equity / reference),
-        "risk": _floor_shares(risk_pct * equity / risk_per_share),
-        "cap": _floor_shares((cap_pct * equity - held_value) / reference),
-        "cash": _floor_shares(cash / reference),
+        "target": floor_shares(target_weight * equity / reference),
+        "risk": floor_shares(risk_pct * equity / risk_per_share),
+        "cap": floor_shares((cap_pct * equity - held_value) / reference),
+        "cash": floor_shares(cash / reference),
     }
 
 

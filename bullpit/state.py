@@ -13,20 +13,11 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from bullpit.domain import Account, ExitStyle, Position, SizedOrder
+from bullpit.domain import Account, Bar, ExitStyle, Position, SizedOrder
 from bullpit.llm.schemas import DebatePoint, Evidence, Signal
 from bullpit.report.model import Report
 from bullpit.tools.fundamentals import FundamentalsMetrics
 from bullpit.tools.indicators import Indicators
-
-
-class Bar(BaseModel, frozen=True):
-    date: date
-    open: float
-    high: float
-    low: float
-    close: float
-    volume: float
 
 
 class PriceSnapshot(BaseModel, frozen=True):
@@ -116,4 +107,5 @@ class RequestState(BaseModel):
     sized_order: SizedOrder | None = None  # the final order; set iff outcome == "buy"
     outcome: Literal["buy", "no_trade"] | None = None
     no_trade_reason: str | None = None
+    loss_warning: bool | None = None  # set by the backtest runner (M6-FR-12); None: unknown
     report: Report | None = None

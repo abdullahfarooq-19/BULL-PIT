@@ -86,6 +86,11 @@ class Settings(BaseSettings):
     vix_low_threshold: float = 15.0
     vix_high_threshold: float = 25.0
 
+    # --- Simulated broker and backtest runner (M6) --------------------------
+    sim_slippage_pct: Decimal = Decimal("0.0005")
+    backtest_starting_cash: Decimal = Decimal("100000")
+    backtest_weeks: int = 26
+
     # --- LLM gateway (M2) -------------------------------------------------
     llm_reasoning_effort_small: str = "low"
     llm_reasoning_effort_large: str = "low"
