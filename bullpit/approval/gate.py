@@ -131,7 +131,8 @@ def check_decision(
             code="stale",
             message=(
                 f"The price moved {move:+.1%} since the report: "
-                f"${order.reference_price} to ${latest_price}. Confirm, or reject and re-run."
+                f"${order.reference_price:.2f} to ${latest_price:.2f}. "
+                "Confirm, or reject and re-run."
             ),
             report_price=order.reference_price,
             latest_price=latest_price,
@@ -146,12 +147,12 @@ def check_decision(
 
     if latest_price <= order.stop_loss:
         return _rules_problem(
-            f"The price ${latest_price} is at or below the stop ${order.stop_loss}: "
+            f"The price ${latest_price:.2f} is at or below the stop ${order.stop_loss:.2f}: "
             "the order would exit at once. Reject and re-run."
         )
     if latest_price >= order.take_profit:
         return _rules_problem(
-            f"The price ${latest_price} is at or above the target ${order.take_profit}: "
+            f"The price ${latest_price:.2f} is at or above the target ${order.take_profit:.2f}: "
             "the order would exit at once. Reject and re-run."
         )
     fits = min(
@@ -160,7 +161,7 @@ def check_decision(
     )
     if shares > fits:
         return _rules_problem(
-            f"{shares} shares don't fit the cash and per-stock cap at ${latest_price}; "
+            f"{shares} shares don't fit the cash and per-stock cap at ${latest_price:.2f}; "
             f"at most {fits} do. If an earlier order has filled, run the fill check and retry.",
             max_shares=fits,
         )
