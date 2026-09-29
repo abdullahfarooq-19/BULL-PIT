@@ -8,10 +8,13 @@ milestones extend `requests` and add their own tables against the same
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import JSON, ForeignKey, Index, UniqueConstraint, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from bullpit.domain import Trade
 
 
 class Base(DeclarativeBase):
@@ -224,6 +227,69 @@ class EquitySnapshot(Base):
     cash: Mapped[str | None] = mapped_column(default=None)
     positions_value: Mapped[str | None] = mapped_column(default=None)
     equity: Mapped[str]
+
+
+def _decimal(value: str | None) -> Decimal | None:
+    return None if value is None else Decimal(value)
+
+
+def trade_from_row(row: TradeRecord) -> Trade:
+    """The broker `Trade` a `trades` row records (backtest and live)."""
+    return Trade.model_validate(
+        {
+            "client_order_id": row.client_order_id,
+            "ticker": row.ticker,
+            "submitted_on": row.submitted_on,
+            "shares": row.shares,
+            "reference_price": Decimal(row.reference_price),
+            "stop_loss": Decimal(row.stop_loss),
+            "take_profit": Decimal(row.take_profit),
+            "status": row.status,
+            "entry_date": row.entry_date,
+            "entry_price": _decimal(row.entry_price),
+            "exit_date": row.exit_date,
+            "exit_price": _decimal(row.exit_price),
+            "exit_reason": row.exit_reason,
+            "cancel_reason": row.cancel_reason,
+            "order_id": row.order_id,
+            "stop_order_id": row.stop_order_id,
+            "take_profit_order_id": row.take_profit_order_id,
+        }
+    )
+
+
+def trade_fields(trade: Trade) -> dict[str, Any]:
+    """The `trades` columns a broker `Trade` fills that change over its life;
+    money as `Decimal` strings."""
+    return {
+        "shares": trade.shares,
+        "status": trade.status,
+        "entry_date": trade.entry_date,
+        "entry_price": None if trade.entry_price is None else str(trade.entry_price),
+        "exit_date": trade.exit_date,
+        "exit_price": None if trade.exit_price is None else str(trade.exit_price),
+        "exit_reason": trade.exit_reason,
+        "cancel_reason": trade.cancel_reason,
+        "pnl": None if trade.pnl is None else str(trade.pnl),
+    }
+
+
+def trade_record(request_id: str, trade: Trade, *, run_id: str | None = None) -> TradeRecord:
+    """A new `trades` row for `trade`; `run_id` is `None` for a live trade."""
+    return TradeRecord(
+        request_id=request_id,
+        run_id=run_id,
+        client_order_id=trade.client_order_id,
+        ticker=trade.ticker,
+        submitted_on=trade.submitted_on,
+        reference_price=str(trade.reference_price),
+        stop_loss=str(trade.stop_loss),
+        take_profit=str(trade.take_profit),
+        order_id=trade.order_id,
+        stop_order_id=trade.stop_order_id,
+        take_profit_order_id=trade.take_profit_order_id,
+        **trade_fields(trade),
+    )
 
 
 class LLMCall(Base):

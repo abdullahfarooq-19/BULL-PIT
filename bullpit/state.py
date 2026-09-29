@@ -13,7 +13,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from bullpit.domain import Account, Bar, ExitStyle, Position, SizedOrder
+from bullpit.approval.gate import ApprovalDecision
+from bullpit.domain import Account, Bar, ExitStyle, Position, SizedOrder, Trade
 from bullpit.llm.schemas import DebatePoint, Evidence, Signal
 from bullpit.report.model import Report
 from bullpit.tools.fundamentals import FundamentalsMetrics
@@ -107,5 +108,7 @@ class RequestState(BaseModel):
     sized_order: SizedOrder | None = None  # the final order; set iff outcome == "buy"
     outcome: Literal["buy", "no_trade"] | None = None
     no_trade_reason: str | None = None
-    loss_warning: bool | None = None  # set by the backtest runner (M6-FR-12); None: unknown
+    loss_warning: bool | None = None  # set by the runner from equity snapshots; None: unknown
     report: Report | None = None
+    approval: ApprovalDecision | None = None  # the owner's decision (live, M8)
+    trade: Trade | None = None  # the order placed for an approved buy (live, M8)

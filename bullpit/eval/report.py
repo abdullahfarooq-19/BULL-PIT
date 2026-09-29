@@ -35,9 +35,9 @@ from bullpit.journal.models import (
     RecommendationRecord,
     Request,
     TradeRecord,
+    trade_from_row,
 )
 from bullpit.risk.rules import stage_a
-from bullpit.runners.backtest import trade_from_row
 from bullpit.tools.indicators import compute_indicators
 
 matplotlib.use("Agg")  # static PNGs, no display (D-M7-15)
