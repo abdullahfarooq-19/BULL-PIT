@@ -43,11 +43,11 @@ _SECRET_CONFIG_FIELDS = {
 }
 
 
-def _naive_utc_now() -> datetime:
+def naive_utc_now() -> datetime:
     return utc_now().replace(tzinfo=None)
 
 
-def _earliest_backtest_date(settings: Settings) -> date:
+def earliest_backtest_date(settings: Settings) -> date:
     latest_cutoff = max(settings.llm_small_model_cutoff, settings.llm_large_model_cutoff)
     return latest_cutoff + timedelta(days=1)
 
@@ -57,7 +57,7 @@ def _config_snapshot(settings: Settings) -> dict[str, Any]:
     return {key: value for key, value in dumped.items() if key not in _SECRET_CONFIG_FIELDS}
 
 
-def _git_commit() -> str:
+def git_commit() -> str:
     git = shutil.which("git")
     if git is None:
         return "unknown"
@@ -87,13 +87,13 @@ def _insert_rejected_row(
                 id=request_id,
                 mode=mode,
                 as_of=as_of,
-                created_at=_naive_utc_now(),
+                created_at=naive_utc_now(),
                 ticker=ticker,
                 status="rejected",
                 status_reason=message,
                 config=_config_snapshot(settings),
-                git_commit=_git_commit(),
-                finished_at=_naive_utc_now(),
+                git_commit=git_commit(),
+                finished_at=naive_utc_now(),
             )
         )
         session.commit()
@@ -114,7 +114,7 @@ def _acquire_lock(
     genuinely still running (M3-FR-3).
     """
     with sessions() as session:
-        cutoff = _naive_utc_now() - timedelta(minutes=timeout_minutes)
+        cutoff = naive_utc_now() - timedelta(minutes=timeout_minutes)
         stale = (
             session.execute(
                 select(Request).where(
@@ -129,7 +129,7 @@ def _acquire_lock(
             if created < cutoff:
                 row.status = "failed"
                 row.status_reason = "abandoned: running longer than the lock timeout"
-                row.finished_at = _naive_utc_now()
+                row.finished_at = naive_utc_now()
                 logger.warning(
                     "request_lock_abandoned", ticker=ticker, mode=mode, request_id=row.id
                 )
@@ -139,7 +139,7 @@ def _acquire_lock(
                 id=request_id,
                 mode=mode,
                 as_of=as_of,
-                created_at=_naive_utc_now(),
+                created_at=naive_utc_now(),
                 ticker=ticker,
                 status="running",
             )
@@ -180,6 +180,90 @@ def _recommendation_record(
     )
 
 
+def add_request_rows(
+    session: Session,
+    row: Request,
+    *,
+    result: RequestState | None,
+    error: BaseException | None,
+    settings: Settings,
+) -> None:
+    """Fills in `row` and adds the request's child rows. The caller commits, so
+    the backtest runner can commit a week's requests with its checkpoint."""
+    request_id = row.id
+    if error is not None:
+        row.status = "failed"
+        row.status_reason = str(error)
+    elif result is not None and result.rejection is not None:
+        row.status = "rejected"
+        row.status_reason = result.rejection
+    else:
+        row.status = "completed"
+
+    row.route = None if result is None else result.route
+    row.warnings = None if result is None else list(result.warnings)
+    row.config = _config_snapshot(settings)
+    row.git_commit = git_commit()
+    row.price_source = None if result is None or result.prices is None else result.prices.source
+    row.finished_at = naive_utc_now()
+    row.outcome = None if result is None else result.outcome
+    row.no_trade_reason = None if result is None else result.no_trade_reason
+    session.flush()  # the models have no relationships, so write the row before its children
+
+    if result is not None:
+        for signal in (
+            result.technical_signal,
+            result.fundamentals_signal,
+            result.sentiment_signal,
+        ):
+            if signal is None:
+                continue
+            session.add(
+                SignalRecord(
+                    request_id=request_id,
+                    analyst=signal.analyst,
+                    direction=signal.direction,
+                    confidence=signal.confidence,
+                    evidence=[item.model_dump() for item in signal.evidence],
+                    flagged=signal.flagged,
+                    note=signal.note,
+                )
+            )
+
+        for turn in result.debate:
+            session.add(
+                DebateTurnRecord(
+                    request_id=request_id,
+                    round=turn.round,
+                    side=turn.side,
+                    points=[point.model_dump() for point in turn.points],
+                    concessions=list(turn.concessions),
+                    conviction=turn.conviction,
+                    word_count=turn.word_count,
+                    unsupported_count=sum(1 for point in turn.points if point.unsupported),
+                    over_word_limit=turn.over_word_limit,
+                    flagged=turn.flagged,
+                )
+            )
+
+        last_index = len(result.attempts) - 1
+        for index, attempt in enumerate(result.attempts):
+            is_winning_attempt = result.outcome == "buy" and index == last_index
+            final_order = (
+                result.sized_order.model_dump(mode="json")
+                if is_winning_attempt and result.sized_order is not None
+                else None
+            )
+            session.add(
+                _recommendation_record(request_id, index + 1, attempt, final_order=final_order)
+            )
+
+        if result.report is not None:
+            session.add(
+                ReportRecord(request_id=request_id, report=result.report.model_dump(mode="json"))
+            )
+
+
 def _finalize(
     sessions: sessionmaker[Session],
     *,
@@ -192,80 +276,7 @@ def _finalize(
         row = session.get(Request, request_id)
         if row is None:
             raise ValueError(f"no requests row for {request_id!r} to finalize")
-
-        if error is not None:
-            row.status = "failed"
-            row.status_reason = str(error)
-        elif result is not None and result.rejection is not None:
-            row.status = "rejected"
-            row.status_reason = result.rejection
-        else:
-            row.status = "completed"
-
-        row.route = None if result is None else result.route
-        row.warnings = None if result is None else list(result.warnings)
-        row.config = _config_snapshot(settings)
-        row.git_commit = _git_commit()
-        row.price_source = None if result is None or result.prices is None else result.prices.source
-        row.finished_at = _naive_utc_now()
-        row.outcome = None if result is None else result.outcome
-        row.no_trade_reason = None if result is None else result.no_trade_reason
-
-        if result is not None:
-            for signal in (
-                result.technical_signal,
-                result.fundamentals_signal,
-                result.sentiment_signal,
-            ):
-                if signal is None:
-                    continue
-                session.add(
-                    SignalRecord(
-                        request_id=request_id,
-                        analyst=signal.analyst,
-                        direction=signal.direction,
-                        confidence=signal.confidence,
-                        evidence=[item.model_dump() for item in signal.evidence],
-                        flagged=signal.flagged,
-                        note=signal.note,
-                    )
-                )
-
-            for turn in result.debate:
-                session.add(
-                    DebateTurnRecord(
-                        request_id=request_id,
-                        round=turn.round,
-                        side=turn.side,
-                        points=[point.model_dump() for point in turn.points],
-                        concessions=list(turn.concessions),
-                        conviction=turn.conviction,
-                        word_count=turn.word_count,
-                        unsupported_count=sum(1 for point in turn.points if point.unsupported),
-                        over_word_limit=turn.over_word_limit,
-                        flagged=turn.flagged,
-                    )
-                )
-
-            last_index = len(result.attempts) - 1
-            for index, attempt in enumerate(result.attempts):
-                is_winning_attempt = result.outcome == "buy" and index == last_index
-                final_order = (
-                    result.sized_order.model_dump(mode="json")
-                    if is_winning_attempt and result.sized_order is not None
-                    else None
-                )
-                session.add(
-                    _recommendation_record(request_id, index + 1, attempt, final_order=final_order)
-                )
-
-            if result.report is not None:
-                session.add(
-                    ReportRecord(
-                        request_id=request_id, report=result.report.model_dump(mode="json")
-                    )
-                )
-
+        add_request_rows(session, row, result=result, error=error, settings=settings)
         session.commit()
 
 
@@ -290,7 +301,7 @@ def run_request(
         if mode == "backtest" and as_of <= latest_cutoff:
             message = (
                 "Backtest dates must be after the models' training cutoff: "
-                f"use {_earliest_backtest_date(settings)} or later."
+                f"use {earliest_backtest_date(settings)} or later."
             )
             _insert_rejected_row(
                 sessions,
