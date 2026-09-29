@@ -12,10 +12,12 @@ from datetime import UTC, date, datetime
 import pytest
 
 from bullpit.data.calendar import (
+    decision_days,
     is_session,
     last_completed_session,
     lookback_start,
     session_close,
+    sessions_between,
 )
 from bullpit.errors import ConfigError
 
@@ -86,3 +88,26 @@ class TestLookbackStart:
     def test_raises_if_as_of_not_a_session(self) -> None:
         with pytest.raises(ConfigError):
             lookback_start(date(2024, 3, 9), 5)
+
+
+class TestSessionsBetween:
+    def test_skips_the_july_4_holiday(self) -> None:
+        # An order submitted 2024-07-03 fills on the next session, 2024-07-05 (M6-AC-2).
+        assert sessions_between(date(2024, 7, 3), date(2024, 7, 5)) == [date(2024, 7, 5)]
+
+    def test_excludes_after_and_includes_through(self) -> None:
+        assert sessions_between(date(2024, 6, 6), date(2024, 6, 7)) == [date(2024, 6, 7)]
+
+
+class TestDecisionDays:
+    def test_26_weeks_from_2024_07_01(self) -> None:
+        days = decision_days(date(2024, 7, 1), 26)
+        assert len(days) == 26
+        assert days[0] == date(2024, 7, 5)  # 2024-07-04 is a holiday, Friday is the last session
+        assert days[-1] == date(2024, 12, 27)
+
+    def test_good_friday_week_uses_thursday(self) -> None:
+        assert decision_days(date(2025, 4, 14), 1) == [date(2025, 4, 17)]
+
+    def test_first_week_only_counts_sessions_from_start(self) -> None:
+        assert decision_days(date(2024, 7, 8), 1) == [date(2024, 7, 12)]

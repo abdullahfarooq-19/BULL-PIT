@@ -38,3 +38,11 @@ class TestM5SettingDefaults:
         settings = _settings()
         assert settings.vix_low_threshold == 15.0
         assert settings.vix_high_threshold == 25.0
+
+
+class TestM6SettingDefaults:
+    def test_backtest_defaults(self) -> None:
+        settings = _settings()
+        assert settings.sim_slippage_pct == Decimal("0.0005")
+        assert settings.backtest_starting_cash == Decimal("100000")
+        assert settings.backtest_weeks == 26

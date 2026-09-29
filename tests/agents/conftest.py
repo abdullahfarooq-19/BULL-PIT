@@ -14,10 +14,10 @@ import pytest
 
 from bullpit.agents.signals_board import build_board
 from bullpit.config import Settings
-from bullpit.domain import Account
+from bullpit.domain import Account, Bar
 from bullpit.llm.gateway import CompletionReply, CompletionRequest
 from bullpit.llm.schemas import Evidence, Signal
-from bullpit.state import Bar, PriceSnapshot, RequestState
+from bullpit.state import PriceSnapshot, RequestState
 from bullpit.tools.indicators import Indicators
 
 # Fixed first lines the four M4 templates render with (plan sec9.5), so a

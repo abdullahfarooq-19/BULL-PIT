@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Revision 5: all decisions resolved; M4 accepted, M5 in progress |
+| **Status** | Revision 5: all decisions resolved; M5 accepted, M6 in progress |
 | **Changes in revision 5** | D10 and D11 added ([§3](#3-deviations-from-the-architecture-roadmap)), approved with the M3 specs; `architecture.md` v2.2 |
 | **Date** | 2026-09-28 |
 | **Changes in revision 4** | Scope review of M1–M9 ([§10.1](#101-scope-review-revision-4)): work that doesn't change the architecture cut or simplified (C1–C13); token measurement, the pinned-model guard and the loss-warning wiring moved to the milestones that can actually do them (C14–C16). `architecture.md` unchanged |
@@ -190,7 +190,7 @@ bull-pit/
 
 ## 3. Deviations from the architecture roadmap
 
-The architecture's M0–M9 order is kept. Carrying it out properly needs a few pieces to arrive **earlier** than the architecture roadmap implies, because later milestones depend on them (D1–D7). None of these change the system's behaviour. D8–D11 **do** change the architecture, and `architecture.md` (v2.1, v2.2) has been updated to match.
+The architecture's M0–M9 order is kept. Carrying it out properly needs a few pieces to arrive **earlier** than the architecture roadmap implies, because later milestones depend on them (D1–D7). None of these change the system's behaviour. D8–D12 **do** change the architecture, and `architecture.md` (v2.1, v2.2, v2.4) has been updated to match.
 
 **Status: D1–D9 approved by the owner on 2026-09-28; D10 and D11 approved the same day with the M3 specs.**
 
@@ -207,6 +207,7 @@ The architecture's M0–M9 order is kept. Carrying it out properly needs a few p
 | D9 | **Model swap: Groq Llama 3.1 8B / 3.3 70B → Groq `openai/gpt-oss-20b` (small) and `openai/gpt-oss-120b` (large), pinned.** The backtest window must start **2024-07-01 or later**, derived from the models' published June 2024 cutoff (enforced by M6-AC-5). Architecture §10, §13, §14 updated | Both are free on Groq and have a published training cutoff, which the look-ahead protection depends on. The free-tier limits differ from the Llama plan (see architecture §14 and the risks in [§9](#9-plan-level-risks)) |
 | D10 | **The fundamentals LLM judges filing-based ratios only; P/E is code-computed evidence for the debate and report.** Architecture Part 6 updated (v2.2) | Part 6 asked for the LLM to read P/E *and* for the signal to be cached per filing. P/E changes daily, so the cached verdict would go stale or, reused across backtest dates, leak a later price. Owner chose this option ([M3 specs-plan](milestones/M3-analysts/specs-plan.md) Q1) |
 | D11 | **Code writes every evidence fact; the analyst LLMs only judge** (direction and confidence; sentiment: per-headline scores). The signal format is unchanged. Architecture Part 5 updated (v2.2) | No LLM-written number can reach the debate or report, and the evidence registry is exact ([M3 specs-plan](milestones/M3-analysts/specs-plan.md) D-M3-1) |
+| D12 | **The simulated broker checks exits on the entry day too**, with that day's low and high, stop first. Architecture Part 14 updated (v2.4) | A daily bar's low and high all happen after the open, while the bracket is live. Skipping the entry day would miss day-one stops: an optimistic bias ([M6 specs-plan](milestones/M6-backtest/specs-plan.md) D-M6-3, Q1) |
 
 ---
 
@@ -483,7 +484,7 @@ Each milestone below states the goal, scope, deliverables, **draft acceptance cr
 - M6-AC-3: Two same-Friday buys whose total cost exceeds cash result in the second being downsized or "no trade", never negative cash.
 - M6-AC-4: A backtest killed at a random point (or stopped by `QuotaExhausted`) and then resumed produces **exactly the same** journal as an uninterrupted run with the same seed (the cached LLM replies make this deterministic).
 - M6-AC-5: A window starting before a pinned model's training cutoff is refused.
-- M6-AC-6: A 26-week, 3-stock backtest on the pinned models, starting on or after 2024-07-01, completes (across several resumed sessions if the daily quota runs out), with every table filled in.
+- M6-AC-6: A 2-week, 1-stock backtest on the pinned models, starting 2024-07-01, is paused once by the quota and resumed to completion (D-M6-22); the 26-week, 3-stock run is M7's headline run.
 - M6-AC-7: Resuming a run after the configured models have changed is refused (C15).
 
 **Risks:** runtime and quota (one 78-request run is roughly 8–16 days of free quota; develop on fixtures and short windows, cache, resume); subtle sim bias (fixtures for every fill rule, reviewed against the architecture's rules one by one).
@@ -708,6 +709,7 @@ Owner answers recorded on 2026-09-28.
 | Q10a | The caveat | **(1)** The $100,000 applies only to the **simulated backtest account**. Live sizing always reads the real Alpaca paper balance, which may differ (resets, earlier trades). **(2)** Results are reported as **percentages**, so the starting amount doesn't flatter or hide anything. **(3)** With a 10% per-stock cap, one share must cost under $10,000, so the backtest stock-selection rule excludes tickers priced above that (they would always be "no trade") | Keeps backtest and live numbers from being confused, and avoids a dead ticker in the backtest |
 | Q11 | Repeat-run scope for M7, given 200K tokens/day per model | **Repeat runs:** 3 seeds × **13 weeks** × 3 stocks, on the same window, for each LLM approach (gives a fair mean and range). **Headline run:** seed 1 continued to the full **26 weeks**; its first 13 weeks come from the cache, so they cost nothing. The single agent is about one call per request, so it's cheap. Bull Pit (fixed sizing) is free. Estimated total: about 3–5 weeks of free quota, running in the background while M8 is built (M7 and M8 are independent). Revisit only if the measured per-request token counts (M5-AC-7) are far off the estimate | Keeps three seeded runs as the architecture requires while fitting the free tier |
 | — | Revert D8? (owner asked to revert only if the original was better) | **D8 kept: brain routing stays in code** | Debate-or-skip is a threshold decision: code gives the same answer every time, is easy to test, and saves an LLM call on every request, which matters with the 8K tokens-per-minute limit. The original design already limited the LLM to choosing between fixed routes, so it added cost without adding judgment |
+| D-M6-22 | M6's real run: 26 weeks × 3 stocks, or shorter? | **2 weeks × 1 stock**, with a forced quota pause and resume; the 26-week, 3-stock run moves to M7 as its headline run. Architecture §16's M6 done-when updated (v2.4) | Groq's free tier gives the large model 200K tokens per rolling 24 hours, about 80K of it free on 2026-09-29. The runner is the same code at any length, and the automated resume test proves the rest ([M6 specs-plan](milestones/M6-backtest/specs-plan.md) D-M6-22) |
 
 Nothing is open. Q3 and Q4 are owner actions needed before M0 implementation starts (not before M0 docs).
 

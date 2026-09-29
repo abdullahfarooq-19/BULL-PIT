@@ -16,8 +16,9 @@ from bullpit.broker.base import Broker
 from bullpit.config import Settings
 from bullpit.data.prices import get_prices
 from bullpit.data.sec import get_sec_facts
+from bullpit.domain import Bar
 from bullpit.errors import DataUnavailable
-from bullpit.state import Bar, PriceSnapshot, RequestState
+from bullpit.state import PriceSnapshot, RequestState
 
 
 def request_check_node(

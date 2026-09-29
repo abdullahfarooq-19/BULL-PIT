@@ -45,11 +45,12 @@ def _download_news(
 
 
 def _frame_from_news(records: list[dict[str, Any]]) -> pd.DataFrame:
-    if not records:
-        return pd.DataFrame(columns=_NEWS_COLUMNS)
-    frame = pd.DataFrame(records)
-    frame["created_at"] = pd.to_datetime(frame["created_at"], utc=True)
-    return frame[_NEWS_COLUMNS]
+    frame = pd.DataFrame(records, columns=_NEWS_COLUMNS)
+    # One unit, also for no records: an empty fetch parses to seconds, and
+    # merging that with cached microseconds turns the dates into objects,
+    # which the date guard rejects.
+    frame["created_at"] = pd.to_datetime(frame["created_at"], utc=True).dt.as_unit("us")
+    return frame
 
 
 def get_news(symbol: str, as_of: date, *, settings: Settings) -> list[NewsArticle]:

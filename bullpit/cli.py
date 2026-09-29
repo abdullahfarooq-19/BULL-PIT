@@ -1,12 +1,14 @@
 """Typer entry points. `doctor` is the only command from M0; `request` (M3)
 runs the graph end to end for one ticker (D-M3-6: a way to run and inspect
-the graph long before the dashboard).
+the graph long before the dashboard); `backtest` (M6) runs or resumes a
+weekly backtest.
 """
 
 from __future__ import annotations
 
 import sys
 from datetime import date
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Annotated, Literal, cast
 
@@ -22,6 +24,7 @@ from bullpit.errors import BullPitError, ConfigError
 from bullpit.journal.db import journal_url, make_engine, make_sessions
 from bullpit.logging import configure_logging
 from bullpit.report.builder import render_markdown
+from bullpit.runners.backtest import RunResult, WeekSummary, run_backtest, start_backtest
 from bullpit.runners.request import run_request
 from bullpit.state import RequestState
 
@@ -201,6 +204,91 @@ def request(
     if result.report is not None:
         typer.echo("=== REPORT ===")
         typer.echo(render_markdown(result.report))
+
+
+def _print_week(summary: WeekSummary) -> None:
+    outcomes = ", ".join(f"{ticker} {label}" for ticker, label in summary.outcomes.items())
+    typer.echo(f"{summary.decision_day}: {outcomes} | equity {summary.equity:,.2f}")
+
+
+def _print_run_summary(result: RunResult) -> None:
+    """M6-FR-14: end equity, closed trades, open-at-end trades listed apart, cancelled orders."""
+    closed = [trade for trade in result.trades if trade.status == "closed"]
+    wins = sum(1 for trade in closed if trade.pnl is not None and trade.pnl > 0)
+    total = sum((trade.pnl or Decimal(0) for trade in closed), Decimal(0))
+    typer.echo(f"run {result.run_id} completed: end equity {result.end_equity:,.2f}")
+    typer.echo(f"closed trades: {len(closed)} ({wins} wins), P&L {total:,.2f}")
+    still_open = [trade for trade in result.trades if trade.status == "open_at_end"]
+    typer.echo(f"open at window end: {len(still_open)}")
+    for trade in still_open:
+        typer.echo(
+            f"  {trade.ticker} {trade.shares} @ {trade.entry_price} "
+            f"marked {trade.exit_price}, P&L {trade.pnl}"
+        )
+    cancelled = sum(1 for trade in result.trades if trade.status == "cancelled")
+    typer.echo(f"cancelled orders: {cancelled}")
+
+
+@app.command()
+def backtest(
+    tickers: Annotated[str | None, typer.Option("--tickers", help="Comma-separated")] = None,
+    start: Annotated[str | None, typer.Option("--start", help="YYYY-MM-DD")] = None,
+    weeks: Annotated[int | None, typer.Option("--weeks")] = None,
+    seed: Annotated[int | None, typer.Option("--seed")] = None,
+    cash: Annotated[str | None, typer.Option("--cash")] = None,
+    resume: Annotated[str | None, typer.Option("--resume", help="Run ID to resume")] = None,
+) -> None:
+    """Start a weekly backtest, or continue one with --resume RUN_ID."""
+    try:
+        settings = get_settings()
+    except BullPitError as exc:
+        typer.echo(f"config          FAIL    {exc}")
+        raise typer.Exit(code=1) from None
+
+    configure_logging(settings)
+    _upgrade_journal_schema(settings)
+    sessions = make_sessions(make_engine(journal_url(settings)))
+
+    try:
+        if resume is not None:
+            if any(option is not None for option in (tickers, start, weeks, seed, cash)):
+                typer.echo("--resume takes no other options: the run keeps its own inputs")
+                raise typer.Exit(code=2)
+            run_id = resume
+        else:
+            if tickers is None or start is None:
+                typer.echo("--tickers and --start are required unless --resume is given")
+                raise typer.Exit(code=2)
+            run_id = start_backtest(
+                tickers.split(","),
+                date.fromisoformat(start),
+                weeks=settings.backtest_weeks if weeks is None else weeks,
+                seed=settings.llm_seed if seed is None else seed,
+                starting_cash=settings.backtest_starting_cash if cash is None else Decimal(cash),
+                settings=settings,
+                sessions=sessions,
+                asset_lookup=make_alpaca_broker(settings),
+            )
+    except (ValueError, InvalidOperation):
+        typer.echo("--start must be YYYY-MM-DD and --cash a number")
+        raise typer.Exit(code=2) from None
+    except ConfigError as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(code=2) from None
+
+    try:
+        result = run_backtest(run_id, settings=settings, sessions=sessions, on_week=_print_week)
+    except ConfigError as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(code=2) from None
+    except Exception as exc:
+        typer.echo(f"Stopped: {exc}. Resume with: bullpit backtest --resume {run_id}")
+        raise typer.Exit(code=1) from None
+
+    if result.status == "paused":
+        typer.echo(f"Paused: {result.reason}. Resume with: bullpit backtest --resume {run_id}")
+        raise typer.Exit(code=3)
+    _print_run_summary(result)
 
 
 if __name__ == "__main__":

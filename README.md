@@ -74,8 +74,33 @@ Code writes every number. A small model writes only the plain-language
 sentences, and any number or evidence ID it adds that isn't already in the
 report gets the text rejected and rewritten once, then replaced by plain
 template sentences. The report is also saved to the journal (`reports`
-table) as JSON. The approval gate, order placement and journal read-back
-arrive in M6 and M8.
+table) as JSON. Live approval and order placement arrive in M8; backtests
+(below) approve and place simulated orders themselves.
+
+### Running a backtest
+
+A backtest runs the same graph once per stock on the last trading day of each
+week, follows every buy through a simulated $100,000 account (entry at the
+next open plus 0.05% slippage, then the stop-loss or take-profit from daily
+bars), and saves everything to the journal. The start must be after the models'
+training cutoff, so 2024-07-01 or later.
+
+```bash
+# Start: two weeks on one stock (ADR-0006 lists the chosen stocks)
+uv run bullpit backtest --tickers MSFT --start 2024-07-01 --weeks 2 --seed 1
+
+# When the free daily quota runs out it pauses and prints the run ID:
+#   Paused: ... Resume with: bullpit backtest --resume 9f7e293e
+uv run bullpit backtest --resume 9f7e293e
+```
+
+It prints one line per finished week, then the end equity, closed trades
+(count, wins, profit and loss), trades still open at the window end (listed
+separately), and cancelled orders. Progress is saved after every week, so a
+pause or crash loses at most the unfinished week, and the calls that week
+already made come back from the cache at no token cost. `--resume` refuses to
+continue if the configured models changed. Exit codes: 0 done, 1 stopped by an
+error, 2 bad usage, 3 paused. Berkshire's class B share is typed `BRK.B`.
 
 ## Development commands
 

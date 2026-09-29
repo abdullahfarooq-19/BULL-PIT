@@ -9,9 +9,10 @@ import pandas as pd
 from sqlalchemy.orm import Session, sessionmaker
 
 from bullpit.config import Settings
+from bullpit.domain import Bar
 from bullpit.llm.gateway import CompletionFn, Role, call_llm, litellm_completion
 from bullpit.llm.schemas import AnalystVerdict, Evidence, Signal
-from bullpit.state import Bar, RequestState
+from bullpit.state import RequestState
 from bullpit.tools.indicators import Indicators, compute_indicators
 
 _TEMPLATE = "technical.md"

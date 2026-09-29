@@ -10,7 +10,7 @@ given a date or a moment.
 from __future__ import annotations
 
 import bisect
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from functools import lru_cache
 from typing import cast
 from zoneinfo import ZoneInfo
@@ -63,6 +63,27 @@ def last_completed_session(moment: datetime) -> date:
         raise ConfigError(f"{moment} is before the supported calendar range")
     index = bisect.bisect_right(closes.to_list(), moment) - 1
     return cast(date, closes.index[index])
+
+
+def sessions_between(after: date, through: date) -> list[date]:
+    """The sessions in `(after, through]`, oldest first. Dates need not be sessions."""
+    return [day for day in _schedule().index if after < day <= through]
+
+
+def decision_days(start: date, weeks: int) -> list[date]:
+    """The last session of each of `weeks` calendar weeks (Monday to Sunday),
+    beginning with the week that contains `start` and using only sessions on
+    or after `start` (M6-FR-8). A week with no such session is skipped.
+    """
+    monday = start - timedelta(days=start.weekday())
+    days: list[date] = []
+    for week in range(weeks):
+        week_start = monday + timedelta(weeks=week)
+        first = max(start, week_start)
+        sessions = sessions_between(first - timedelta(days=1), week_start + timedelta(days=6))
+        if sessions:
+            days.append(sessions[-1])
+    return days
 
 
 def lookback_start(as_of: date, sessions: int) -> date:
