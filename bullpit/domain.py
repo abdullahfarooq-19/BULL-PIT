@@ -11,7 +11,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 
 class Bar(BaseModel, frozen=True):
@@ -91,6 +91,7 @@ class Trade(BaseModel, frozen=True):
     stop_order_id: str | None = None
     take_profit_order_id: str | None = None
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def pnl(self) -> Decimal | None:
         """(exit - entry) x shares, once closed or marked at the window end."""

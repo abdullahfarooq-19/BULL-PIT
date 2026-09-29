@@ -21,6 +21,8 @@ data_cache/
 logs/
 *.db
 checkpoints.db*
+*.db-shm
+*.db-wal
 web/.next/
 *.sqlite
 *.sqlite3

@@ -467,7 +467,7 @@ def open_request(
         )
 
 
-def _thread(request_id: str) -> Any:
+def thread_config(request_id: str) -> Any:
     """LangGraph's config for a request's checkpointed thread (M8-FR-5)."""
     return {"configurable": {"thread_id": request_id}}
 
@@ -504,7 +504,7 @@ def _run_graph(
             update={"loss_warning": _live_loss_warning(sessions, state.as_of, settings)}
         )
     try:
-        raw_state = graph.invoke(state, _thread(state.request_id))
+        raw_state = graph.invoke(state, thread_config(state.request_id))
         result = RequestState.model_validate(raw_state)
         paused = bool(raw_state.get("__interrupt__"))
     except BaseException as exc:
@@ -568,7 +568,7 @@ def resume_live(
     (M8-FR-7). Resumes the pause if it is still pending, or picks up a run that
     stopped inside `execute`; a rejection, or a resend after the order step
     finished, just completes the request. A rejected order marks it failed."""
-    config = _thread(request_id)
+    config = thread_config(request_id)
     snapshot = graph.get_state(config)
     with structlog.contextvars.bound_contextvars(request_id=request_id):
         try:
