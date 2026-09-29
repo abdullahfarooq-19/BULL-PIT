@@ -2,7 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Revision 6: D13 added (M7 as a Qwen-only pilot); M6 accepted, M7 built and awaiting acceptance |
+| **Status** | Revision 7: D14 added (TradingView Lightweight Charts); M7 accepted, M8 in progress |
+| **Changes in revision 7** | D14 added ([§3](#3-deviations-from-the-architecture-roadmap)); §2.1 frontend row, §2.3 layout (`api/` → `bullpit/api/`), §8 M8 row and §10.1 C6 updated; `architecture.md` v2.6 |
 | **Changes in revision 6** | D13 added ([§3](#3-deviations-from-the-architecture-roadmap)), Q5 answered ([§10](#10-decisions-log)); M7 becomes a pilot evaluation; `architecture.md` v2.5 |
 | **Changes in revision 5** | D10 and D11 added ([§3](#3-deviations-from-the-architecture-roadmap)), approved with the M3 specs; `architecture.md` v2.2 |
 | **Date** | 2026-09-28 |
@@ -127,7 +128,7 @@ Any decision that isn't already fixed by `architecture.md`, or that changes it, 
 | Settings | `pydantic-settings` | Typed config loaded from `.env` and the environment; every tunable limit lives in `config.py` |
 | Logging | `structlog` (JSON in files, readable on the console) | Every log line carries `request_id`, `mode`, `as_of` when known |
 | Database access | SQLAlchemy 2.0 + Alembic | Versioned migrations; SQLite locally, Postgres-compatible (ADR) |
-| Frontend (M8) | Next.js (TypeScript, App Router) + Recharts | API types generated from FastAPI's OpenAPI schema |
+| Frontend (M8) | Next.js (TypeScript, App Router) + TradingView Lightweight Charts (D14); the UI toolkit is named in the [M8 specs-plan §9.6](milestones/M8-live-mode/specs-plan.md#96-ui-design-direction) | API types generated from FastAPI's OpenAPI schema |
 | CI | GitHub Actions | Lint, type check, tests on every push and PR; web build from M8 |
 
 Library versions are pinned in the lockfile. LangGraph, LiteLLM and alpaca-py change quickly, so they're upgraded only on purpose, one at a time, with the test suite as the gate.
@@ -168,8 +169,8 @@ bull-pit/
 │   ├── broker/
 │   ├── journal/            (+ migrations/ ➕ Alembic)
 │   ├── eval/
-│   └── runners/
-├── api/
+│   ├── runners/
+│   └── api/                ➕ FastAPI app (inside the package, M8 D-M8-12)
 ├── web/
 ├── tests/
 │   ├── …                   test files mirror the package (tests/risk/, tests/data/, …)
@@ -191,7 +192,7 @@ bull-pit/
 
 ## 3. Deviations from the architecture roadmap
 
-The architecture's M0–M9 order is kept. Carrying it out properly needs a few pieces to arrive **earlier** than the architecture roadmap implies, because later milestones depend on them (D1–D7). None of these change the system's behaviour. D8–D13 **do** change the architecture, and `architecture.md` (v2.1, v2.2, v2.4, v2.5) has been updated to match.
+The architecture's M0–M9 order is kept. Carrying it out properly needs a few pieces to arrive **earlier** than the architecture roadmap implies, because later milestones depend on them (D1–D7). None of these change the system's behaviour. D8–D14 **do** change the architecture, and `architecture.md` (v2.1, v2.2, v2.4, v2.5, v2.6) has been updated to match.
 
 **Status: D1–D9 approved by the owner on 2026-09-28; D10 and D11 approved the same day with the M3 specs.**
 
@@ -210,6 +211,7 @@ The architecture's M0–M9 order is kept. Carrying it out properly needs a few p
 | D11 | **Code writes every evidence fact; the analyst LLMs only judge** (direction and confidence; sentiment: per-headline scores). The signal format is unchanged. Architecture Part 5 updated (v2.2) | No LLM-written number can reach the debate or report, and the evidence registry is exact ([M3 specs-plan](milestones/M3-analysts/specs-plan.md) D-M3-1) |
 | D12 | **The simulated broker checks exits on the entry day too**, with that day's low and high, stop first. Architecture Part 14 updated (v2.4) | A daily bar's low and high all happen after the open, while the bracket is live. Skipping the entry day would miss day-one stops: an optimistic bias ([M6 specs-plan](milestones/M6-backtest/specs-plan.md) D-M6-3, Q1) |
 | D13 | **M7's AI runs use `qwen/qwen3.8-27b:free` on OpenRouter for both roles**, over a window after its 2026-08-14 release; the pinned gpt-oss models stay the default everywhere else. M7 is a **pilot** (2 stocks × 2 weeks, one seed); the full run, repeat seeds and debate impact are carried over. Architecture §12, §13, §16 updated (v2.5) | The owner must finish tonight and Groq's daily quota is nearly used. Qwen can't have seen prices after its release, so the look-ahead rule holds ([M7 specs-plan](milestones/M7-evaluation/specs-plan.md) D-M7-9, D-M7-10) |
+| D14 | **M8's live equity chart uses TradingView Lightweight Charts (v5) instead of Recharts.** Architecture §13 updated (v2.6) | The owner chose a trading-grade chart (pan, zoom, crosshair, markers); Apache-2.0, no API key. It only displays numbers the API already computed, so no behaviour changes. M7's backtest charts stay PNGs ([M8 specs-plan](milestones/M8-live-mode/specs-plan.md) D-M8-22) |
 
 ---
 
@@ -541,12 +543,12 @@ Each milestone below states the goal, scope, deliverables, **draft acceptance cr
 - `api/` (FastAPI):
   - `POST /requests` (start; runs in the background because a request takes about a minute), `GET /requests`, `GET /requests/{id}` (status and progress), `GET /requests/{id}/report`, `POST /requests/{id}/approval` (approve with optional lower shares, or reject), `GET /trades`, `GET /equity`, `POST /fill-check`, `GET /backtests`, `GET /backtests/{id}/results`.
   - Binds to **localhost only**, single user, no auth in v1 (hosting is out of scope; see [§10](#10-decisions-log)).
-- `web/` (Next.js + Recharts):
+- `web/` (Next.js + TradingView Lightweight Charts, D14):
   - **New request:** ticker input with the request-check errors shown inline.
   - **Report and decide:** the 10-section report, editable share count (can only go down), Approve and Reject, staleness and loss-warning confirmations, expiry state.
   - **History:** past requests and their reports.
   - **Trades:** open and closed trades, exit reasons, profit or loss; equity chart.
-  - **Backtests:** runs, the M7 results table, and the M7 chart images (not rebuilt in Recharts, C6).
+  - **Backtests:** runs, the M7 results table, and the M7 chart images (not redrawn, C6).
   - Every page is built with its loading, error and empty states and basic accessibility (labels, keyboard use), not in a later pass (C11).
 - Journal: live `approvals` and `trades` flow.
 
@@ -670,7 +672,7 @@ The journal grows one milestone at a time, and each step is one Alembic migratio
 | M5 | `reports` |
 | M6 | `approvals`, `trades`, `equity_snapshots`, `backtest_runs` ➕ (run config, progress, resume point) |
 | M7 | `backtest_runs.policy`, `backtest_runs.source_run_id` (columns only, migration `0006`) |
-| M8 | Live columns on `trades` (broker order IDs, leg IDs), and LangGraph checkpoint tables (managed by the checkpointer) |
+| M8 | Migration `0007_live`: `requests` statuses `awaiting_approval` and `expired`, the lock index on `running` and `awaiting_approval`; `approvals.latest_price` and `.confirmations` (`decided_by` gains `owner`); `trades` order ID, stop-leg ID and take-profit-leg ID columns (`exit_reason` gains `manual`); `equity_snapshots` a partial unique index on `date` for live rows (`run_id` NULL) and nullable `cash` and `positions_value`. LangGraph checkpoint tables live in their own SQLite file, `checkpoints.db`, created by the checkpointer and outside Alembic (D-M8-8) |
 
 ➕ = not listed in architecture Part 15; added for resumable backtests and evaluation bookkeeping.
 
@@ -730,7 +732,7 @@ On 2026-09-28 the owner asked for work in M1–M9 that costs development time wi
 | C3 | `reports` stores the structured report only, not the rendered Markdown | M5 | The Markdown is derived data and can be re-rendered at any time |
 | C4 | No LangGraph checkpointer in backtests; a week's journal rows are committed with its checkpoint, and an unfinished week is re-run from its start | M6 | The response cache makes the re-run free and exact. The checkpointer is still used in M8 for the approval pause |
 | C5 | Backtest stocks chosen once with a written start-date rule, recorded in an ADR; no selection code | M6 | Finding point-in-time market caps in code is a data project of its own, just to pick 3 stocks. The architecture's requirement (a rule using only start-date information) is still met |
-| C6 | Charts made once, as PNGs in M7; the dashboard and README reuse them | M7, M8 | Charts would otherwise be built twice (matplotlib and Recharts). Recharts stays for the live equity chart |
+| C6 | Charts made once, as PNGs in M7; the dashboard and README reuse them | M7, M8 | Charts would otherwise be built twice (matplotlib and a web chart). Lightweight Charts (D14) draws the live equity chart |
 | C7 | Debate-impact counterfactual only on the headline run | M7 | Still measures how often the debate changes the decision, without one extra large-model call per debated request in every repeat run |
 | C8 | No `eval_runs` table | M7 | Results live in files; the table was already optional |
 | C9 | No fill-check scheduler; the fill check runs when the dashboard opens and on demand | M8 | Architecture Part 14 allows either "on a schedule or when you open the dashboard" |

@@ -20,6 +20,7 @@
 | v2.3 | 2026-09-29 | **M5:** the free-tier budget (§14) now uses tokens measured on real requests (about 15K per debated request against the earlier 25–30K estimate). No behaviour change. |
 | v2.4 | 2026-09-29 | **D12:** the simulated broker checks stop-loss and take-profit on the entry day too, using that day's low and high, stop first (Part 14). **M6 done-when** (§16): a resumable backtest proven on the pinned models with a real pause and resume; the 26-week run moves to M7 because the free daily quota can't cover it in one day. |
 | v2.5 | 2026-09-30 | **D13:** M7's AI runs use `qwen/qwen3.8-27b:free` on OpenRouter for both roles, over a window after its 2026-08-14 release (§12, §13); the pinned gpt-oss models stay the default. **M7 done-when** (§16): a pilot results table for all four approaches; repeat runs, the full 26-week run and debate impact are carried over. |
+| v2.6 | 2026-09-30 | **D14:** the dashboard's live equity chart uses TradingView Lightweight Charts instead of Recharts (§13). Wording aligned with M8's plan, no behaviour change: the checkpointer's tables live in their own SQLite file (§13), the API lives in `bullpit/api/` (§15), and the trade's exit reason may also be `manual` (Part 15, as §9 already describes). |
 
 Implementation-level decisions that don't change the system's behaviour (deviations D1–D7) are recorded in [`dev-plan.md` §3](dev-plan.md#3-deviations-from-the-architecture-roadmap).
 
@@ -467,7 +468,7 @@ A database (SQLite locally, or Supabase's free Postgres tier if hosted).
 | `recommendations` | Trader output, risk verdicts, vetoes, final sized order |
 | `reports` | The full report as shown to you |
 | `approvals` | Approve or reject, any share changes, timestamps |
-| `trades` | Entry, exit, exit reason (stop, target, or window end), profit or loss |
+| `trades` | Entry, exit, exit reason (stop, target, manual close, or window end), profit or loss |
 | `equity_snapshots` | Account value over time |
 | `llm_calls` | Model, tokens, latency, cache key for every call |
 
@@ -668,9 +669,9 @@ Everything is free. Nothing needs a GPU, so it runs on an 8 GB RAM laptop.
 | Fundamentals | SEC EDGAR companyfacts via httpx | Free, with filing dates for point-in-time use |
 | News and trading | alpaca-py (news API, paper trading, bracket orders) | Free historical news and a fake-money account |
 | Data cache | Parquet (pyarrow) | Fast, repeatable runs |
-| Database | SQLite locally; Supabase Postgres (free) if hosted | Journal and LangGraph checkpoints |
+| Database | SQLite locally; Supabase Postgres (free) if hosted | Journal, and LangGraph checkpoints in their own SQLite file |
 | Backend API | FastAPI | Start requests, serve reports, receive approvals |
-| Dashboard | Next.js with Recharts | Pick a stock, read reports, approve, view trades and results |
+| Dashboard | Next.js with TradingView Lightweight Charts | Pick a stock, read reports, approve, view trades and results |
 | Tracing | Langfuse (free tier or self-hosted) | See every agent call and its tokens |
 | Testing | pytest | Date guard, indicators, sizing, rules, simulated exits |
 | CI | GitHub Actions | Runs tests on every push |
@@ -730,8 +731,8 @@ bull-pit/
 │   ├── broker/              base, sim (with bracket exits), alpaca
 │   ├── journal/             database models and queries
 │   ├── eval/                metrics, baselines, results report
-│   └── runners/             request (live), backtest, fill_check
-├── api/                     FastAPI app
+│   ├── runners/             request (live), backtest, fill_check
+│   └── api/                 FastAPI app
 ├── web/                     Next.js dashboard
 ├── tests/                   guard, indicators, sizing, rules, sim exits
 ├── data_cache/              Parquet files (git-ignored)
