@@ -44,18 +44,22 @@ def cash_shares(cash: Decimal, reference: Decimal) -> int:
     return floor_shares(cash / reference)
 
 
+def pending_cost(pending: list[Trade], ticker: str | None = None) -> Decimal:
+    """What orders that haven't filled will cost, at their reference price as the
+    simulated broker reserves it; only `ticker`'s when given."""
+    return sum(
+        (t.shares * t.reference_price for t in pending if ticker in (None, t.ticker)), Decimal(0)
+    )
+
+
 def net_of_pending(
     account: Account, held_value: Decimal, pending: list[Trade], ticker: str
 ) -> tuple[Account, Decimal]:
     """The account and the position value in `ticker`, net of orders that haven't
     filled (M8-FR-29): their cost leaves cash, and the ticker's own count as held.
-    Equity is unchanged, since the cash isn't spent yet. Costs use the reference
-    price, as the simulated broker's reservations do."""
-    reserved = sum((t.shares * t.reference_price for t in pending), Decimal(0))
-    in_ticker = sum(
-        (t.shares * t.reference_price for t in pending if t.ticker == ticker), Decimal(0)
-    )
-    return Account(cash=account.cash - reserved, equity=account.equity), held_value + in_ticker
+    Equity is unchanged, since the cash isn't spent yet."""
+    net = Account(cash=account.cash - pending_cost(pending), equity=account.equity)
+    return net, held_value + pending_cost(pending, ticker)
 
 
 def share_limits(

@@ -27,7 +27,7 @@ from bullpit.journal.db import journal_url, make_engine, make_sessions
 from bullpit.logging import configure_logging
 from bullpit.report.builder import render_markdown
 from bullpit.runners.backtest import RunResult, WeekSummary, run_backtest, start_backtest
-from bullpit.runners.request import run_request
+from bullpit.runners.request import PendingAwareBroker, run_request
 from bullpit.state import RequestState
 
 # LLM text (M4's debate/report prose) can contain characters outside
@@ -169,8 +169,15 @@ def request(
     broker = make_alpaca_broker(settings)
 
     validated_mode = cast(Literal["live", "backtest"], mode)
+    live = validated_mode == "live"
     result = run_request(
-        ticker, validated_mode, clock, settings=settings, sessions=sessions, broker=broker
+        ticker,
+        validated_mode,
+        clock,
+        settings=settings,
+        sessions=sessions,
+        broker=PendingAwareBroker(broker, sessions) if live else broker,
+        expiry_broker=broker if live else None,
     )
 
     typer.echo(f"request_id: {result.request_id}")
