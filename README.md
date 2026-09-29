@@ -102,6 +102,33 @@ already made come back from the cache at no token cost. `--resume` refuses to
 continue if the configured models changed. Exit codes: 0 done, 1 stopped by an
 error, 2 bad usage, 3 paused. Berkshire's class B share is typed `BRK.B`.
 
+### Running the evaluation
+
+Every approach is a **policy** on the same backtest runner, broker and sizing
+rules, so only the buy decision differs: `bullpit` (the default),
+`single_agent` (one model call sees all the facts), `always_buy` and `ma_rule`
+(price above its 50-day average), which use no model and size every buy at 6%
+with the normal exit, and `bullpit_fixed` (Bull Pit's own buy decisions, sized
+the same way, replayed from a finished `bullpit` run).
+
+```bash
+uv run bullpit backtest --tickers MSFT,BRK.B --start 2026-08-17 --weeks 2 --seed 1
+uv run bullpit backtest --tickers MSFT,BRK.B --start 2026-08-17 --weeks 2 --policy single_agent
+uv run bullpit backtest --tickers MSFT,BRK.B --start 2026-08-17 --weeks 2 --policy always_buy
+uv run bullpit backtest --tickers MSFT,BRK.B --start 2026-08-17 --weeks 2 --policy ma_rule
+uv run bullpit backtest --tickers MSFT,BRK.B --start 2026-08-17 --weeks 2     --policy bullpit_fixed --source-run <bullpit run ID>
+
+uv run bullpit eval --runs <all five run IDs>     # writes docs/results/
+```
+
+`bullpit eval` writes `results.md` and three charts (equity, drawdown,
+calibration). Code computes every number and every comparison sentence; the
+page always states its limits. The first pilot ran on OpenRouter's free
+`qwen/qwen3.8-27b:free` (released 2026-08-14, so a window after it can't leak)
+by setting `LLM_PROVIDER=openrouter`, both model variables to that name and
+both `LLM_*_MODEL_CUTOFF` variables to `2026-08-14`; the pinned gpt-oss models on
+Groq remain the default. Results: [`docs/results/results.md`](docs/results/results.md).
+
 ## Development commands
 
 ```bash
