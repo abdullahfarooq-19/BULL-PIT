@@ -43,9 +43,9 @@ Phases:
 | ✓ | ID | Task | Files | Serves | Verified by | Commit |
 |---|---|---|---|---|---|---|
 | [x] | M0-T-16 | **Bracket `place`.** Run `alpaca_bracket.py place --confirm`: 1-share GTC market bracket, poll until filled, re-submit the same `client_order_id`. If GTC brackets are refused, stop and bring it to the owner (specs-plan §11.1) | `scripts/spikes/output/` (raw only) | FR-18, AC-5, A7, A8 | Raw output shows the fill, both legs and their statuses, and the duplicate-ID result | — |
-| [ ] | M0-T-17 | **Bracket `inspect`** in the next session: are both legs still active after the overnight close? | `scripts/spikes/output/` | AC-5, A7 | Raw output shows leg statuses after the close | — |
+| [x] | M0-T-17 | **Bracket `inspect`** in the next session: are both legs still active after the overnight close? | `scripts/spikes/output/` | AC-5, A7 | Raw output shows leg statuses after the close | — |
 | [ ] | M0-T-18 | **Bracket `close`.** Cancel the legs, market-sell the share, read the final state | `scripts/spikes/output/` | AC-5 | Position flat; no open orders left (read-back) | — |
-| [ ] | M0-T-19 | **Findings final pass and ADR-0002.** Fill A7 and A8 in `findings.md`; write `docs/adr/0002-bracket-order-tif-and-legs.md` (Accepted) from them | `findings.md`, `docs/adr/0002-bracket-order-tif-and-legs.md` | AC-5, AC-6, AC-10 | Every row in `findings.md` has a verdict; owner review | — |
+| [x] | M0-T-19 | **Findings final pass and ADR-0002.** Fill A7 and A8 in `findings.md`; write `docs/adr/0002-bracket-order-tif-and-legs.md` (Accepted) from them | `findings.md`, `docs/adr/0002-bracket-order-tif-and-legs.md` | AC-5, AC-6, AC-10 | Every row in `findings.md` has a verdict; owner review | — |
 
 ## Phase 3 — Git and CI (later, when the owner says so)
 
@@ -329,8 +329,35 @@ duplicate client_order_id rejected: {"code":40010001,"message":"client_order_id 
 **A8 confirmed**: a reused `client_order_id` is rejected outright. **A7
 partially confirmed**: both legs are live immediately after the fill (the
 take-profit leg armed as `NEW`, the stop-loss leg `HELD` pending
-activation) -- this doesn't yet prove overnight persistence, which needs
-`inspect` after today's close (M0-T-17, not yet run).
+activation).
+
+### M0-T-17: bracket `inspect` (overnight persistence, A7 complete)
+
+Run 2026-09-29, after a full overnight close (market closed 2026-09-28
+16:00 ET, still closed at inspection time, next open 09:30 ET):
+
+```
+{'client_order_id': 'spike-m0-f-1', 'status': 'OrderStatus.FILLED', 'filled_avg_price': '12.57',
+ 'legs': [
+   {'type': 'OrderType.LIMIT', 'status': 'OrderStatus.NEW',  'limit_price': '13.19'},
+   {'type': 'OrderType.STOP',  'status': 'OrderStatus.HELD', 'stop_price': '11.94'}
+ ]}
+```
+
+Identical to the state read right after the fill (M0-T-16) -- **A7 fully
+confirmed**: GTC bracket legs persist unchanged across the overnight
+close.
+
+### M0-T-19: findings final pass and ADR-0002
+
+`findings.md`'s A7 and A8 rows updated to their confirmed verdicts.
+[ADR-0002](../../adr/0002-bracket-order-tif-and-legs.md) (Accepted)
+records the decision: GTC for every bracket, whole shares only,
+symmetric leg-price validation, orders queue while the market is closed,
+and `client_order_id` uniqueness is enforced by Alpaca itself.
+
+The spike's test position (1 share of F) is still open; `close` (M0-T-18)
+runs next time the market is open.
 
 ---
 
