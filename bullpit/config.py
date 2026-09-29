@@ -82,12 +82,16 @@ class Settings(BaseSettings):
     loss_warning_pct: Decimal = Decimal("0.05")
     loss_warning_days: int = 7
 
+    # --- Report (M5) --------------------------------------------------------
+    vix_low_threshold: float = 15.0
+    vix_high_threshold: float = 25.0
+
     # --- LLM gateway (M2) -------------------------------------------------
     llm_reasoning_effort_small: str = "low"
     llm_reasoning_effort_large: str = "low"
     llm_rpm_limit: int = 30
     llm_tpm_limit: int = 8000
-    llm_output_allowance_tokens: int = 1743
+    llm_output_allowance_tokens: int = 1830
     llm_daily_token_budget: int = 200_000
     llm_max_retries: int = 5
     llm_backoff_base_seconds: float = 1.0

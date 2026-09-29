@@ -1,11 +1,12 @@
-"""The four M4 prompt templates (M4-AC-13): each renders from its agent's
-own variable-building code, starts with its fixed first line, has no Jinja
-`include`, and a worst-case prompt stays under the per-call token ceiling
-(NFR-3).
+"""The four M4 prompt templates (M4-AC-13) and the M5 report writer
+(M5-AC-10): each renders from its owner's own variable-building code, starts
+with its fixed first line, has no Jinja `include`, and a worst-case prompt
+stays under the per-call token ceiling (NFR-3).
 """
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from decimal import Decimal
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from bullpit.config import Settings
 from bullpit.domain import SizedOrder
 from bullpit.llm.gateway import _estimate_tokens
 from bullpit.llm.schemas import Evidence, Signal
+from bullpit.report.builder import market_context, report_node
 from bullpit.state import CheckedPoint, DebateTurn, Recommendation, RiskVerdict, TradeAttempt
 from tests.agents.conftest import (
     FIRST_LINE_BEAR,
@@ -30,7 +32,8 @@ from tests.agents.conftest import (
 )
 
 _PROMPTS_DIR = Path(__file__).parent.parent.parent / "bullpit" / "llm" / "prompts"
-_M4_TEMPLATES = ("bull.md", "bear.md", "trader.md", "risk_review.md")
+FIRST_LINE_REPORT = "You are the report writer"
+_TEMPLATES = ("bull.md", "bear.md", "trader.md", "risk_review.md", "report.md")
 
 _ORDER = SizedOrder(
     ticker="AAPL",
@@ -118,8 +121,8 @@ def _recommendation(reasoning: str = "Trend and margins outweigh the news risk."
 
 
 class TestNoTemplateUsesInclude:
-    def test_m4_templates_have_no_jinja_include(self) -> None:
-        for name in _M4_TEMPLATES:
+    def test_templates_have_no_jinja_include(self) -> None:
+        for name in _TEMPLATES:
             content = (_PROMPTS_DIR / name).read_text(encoding="utf-8")
             assert "{% include" not in content, name
 
@@ -203,4 +206,55 @@ class TestRiskReviewWorstCase:
 
         prompt = llm.prompts[-1]
         assert prompt.startswith(FIRST_LINE_RISK_REVIEW)
+        assert _estimate_tokens(prompt, settings) < settings.llm_tpm_limit
+
+
+class TestReportWorstCase:
+    def test_report_renders_and_stays_under_the_ceiling(
+        self, settings: Settings, sessions: sessionmaker[Session]
+    ) -> None:
+        """15 headlines, a full 4-turn transcript of 150-word points, and 3
+        vetoed attempts with long reasons (M5-NFR-2)."""
+        veto = RiskVerdict(
+            decision="veto",
+            reason=_long_claim(40),
+            requested_shares=None,
+            clamped=False,
+            flagged=False,
+        )
+        attempts = [
+            TradeAttempt(recommendation=_recommendation(), sized_order=_ORDER, verdict=veto)
+            for _ in range(3)
+        ]
+        turns = [
+            _worst_transcript()[i % 3].model_copy(update={"side": side, "round": i // 2 + 1})
+            for i, side in enumerate(("bull", "bear", "bull", "bear"))
+        ]
+        state = _worst_case_state(
+            debate=turns,
+            attempts=attempts,
+            outcome="no_trade",
+            no_trade_reason="Risk manager vetoed 3 times: " + _long_claim(40),
+            warnings=["a data warning of some length"] * 5,
+        )
+        llm = ScriptedLLM()
+        llm.queue(
+            FIRST_LINE_REPORT,
+            make_reply(
+                '{"summary": "s", "strongest_bull": "", "strongest_bear": "", '
+                '"bull_conceded": "", "unresolved": "", "would_change_view": "w"}'
+            ),
+        )
+
+        report_node(
+            state,  # type: ignore[arg-type]
+            settings=settings,
+            sessions=sessions,
+            market=market_context([100.0] * 250, 20.0, vix_low=15.0, vix_high=25.0),
+            generated_at=datetime(2024, 10, 18, 21, 0, tzinfo=UTC),
+            completion_fn=llm,
+        )
+
+        prompt = llm.prompts[0]
+        assert prompt.startswith(FIRST_LINE_REPORT)
         assert _estimate_tokens(prompt, settings) < settings.llm_tpm_limit

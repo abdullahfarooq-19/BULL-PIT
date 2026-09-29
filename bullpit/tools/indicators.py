@@ -36,7 +36,8 @@ class Indicators(BaseModel, frozen=True):
     return_3m: float | None
 
 
-def _sma(closes: np.ndarray, period: int) -> float | None:
+def sma(closes: np.ndarray, period: int) -> float | None:
+    """Simple average of the last `period` closes; `None` below `period` closes."""
     if len(closes) < period:
         return None
     return float(closes[-period:].mean())
@@ -96,8 +97,8 @@ def compute_indicators(bars: pd.DataFrame) -> Indicators:
     lows = bars["low"].to_numpy(dtype=float)
     close = float(closes[-1])
 
-    sma_20 = _sma(closes, _SMA_SHORT)
-    sma_50 = _sma(closes, _SMA_LONG)
+    sma_20 = sma(closes, _SMA_SHORT)
+    sma_50 = sma(closes, _SMA_LONG)
 
     return Indicators(
         close=close,

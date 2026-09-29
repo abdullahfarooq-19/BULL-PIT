@@ -1,5 +1,5 @@
-"""Builds the LangGraph graph from the request check through to a final
-outcome (architecture Part 0, sec5; M3-FR-18; M4-FR-16). Only three pieces
+"""Builds the LangGraph graph from the request check through to the report
+(architecture Part 0, sec5; M3-FR-18; M4-FR-16; M5-FR-8). Only three pieces
 are ever bound per build: settings, journal sessions and the broker
 (architecture sec4's dependency injection).
 
@@ -28,12 +28,16 @@ from bullpit.agents.signals_board import build_board
 from bullpit.agents.technical import technical_node
 from bullpit.agents.trader import trader_node
 from bullpit.broker.base import Broker
+from bullpit.clock import utc_now
 from bullpit.config import Settings
+from bullpit.data.prices import get_market_context
 from bullpit.domain import ExitStyle
-from bullpit.errors import LookaheadViolation, QuotaExhausted
+from bullpit.errors import DataUnavailable, LookaheadViolation, QuotaExhausted
 from bullpit.llm.gateway import CompletionFn, litellm_completion
 from bullpit.llm.schemas import Signal
 from bullpit.logging import get_logger
+from bullpit.report.builder import market_context, report_node
+from bullpit.report.model import MarketContext
 from bullpit.request_check import request_check_node
 from bullpit.risk.rules import stage_a
 from bullpit.state import RequestState
@@ -60,7 +64,7 @@ class Deps:
 
 def _route_after_request_check(state: RequestState) -> list[str] | str:
     if state.rejection is not None:
-        return END
+        return "report"
     return list(_ANALYST_NODES)
 
 
@@ -194,8 +198,40 @@ def _risk_sizing_node(state: RequestState, *, deps: Deps) -> dict[str, object]:
     return {"attempts": [*state.attempts[:-1], updated]}
 
 
+def _fetch_market(state: RequestState, settings: Settings) -> tuple[MarketContext, RequestState]:
+    """Section 8's data (M5-FR-4). A data failure gives the all-`None` context
+    and a warning; the request goes on. Only this module calls the data layer."""
+    thresholds = {"vix_low": settings.vix_low_threshold, "vix_high": settings.vix_high_threshold}
+    try:
+        data = get_market_context(state.as_of, settings.price_history_sessions, settings=settings)
+    except DataUnavailable as exc:
+        warnings = [*state.warnings, f"market context not available: {exc}"]
+        return market_context([], None, **thresholds), state.model_copy(
+            update={"warnings": warnings}
+        )
+    vix_closes = data.vix.bars["close"]
+    vix_close = float(vix_closes.iloc[-1]) if len(vix_closes) else None
+    return market_context(data.spy.bars["close"].tolist(), vix_close, **thresholds), state
+
+
+def _report_node(state: RequestState, *, deps: Deps) -> dict[str, object]:
+    """The last node on every path. A rejected request costs nothing: no
+    market fetch and no LLM call (M5-FR-8)."""
+    market = None
+    if state.rejection is None:
+        market, state = _fetch_market(state, deps.settings)
+    return report_node(
+        state,
+        settings=deps.settings,
+        sessions=deps.sessions,
+        market=market,
+        generated_at=utc_now(),
+        completion_fn=deps.completion_fn,
+    )
+
+
 def _route_after_brain(state: RequestState) -> str:
-    return "bull" if state.route == "debate" else END
+    return "bull" if state.route == "debate" else "report"
 
 
 def _route_after_bear(state: RequestState, *, deps: Deps) -> str:
@@ -203,15 +239,15 @@ def _route_after_bear(state: RequestState, *, deps: Deps) -> str:
 
 
 def _route_after_trader(state: RequestState) -> str:
-    return END if state.outcome is not None else "risk_sizing"
+    return "report" if state.outcome is not None else "risk_sizing"
 
 
 def _route_after_sizing(state: RequestState) -> str:
-    return END if state.outcome is not None else "risk_review"
+    return "report" if state.outcome is not None else "risk_review"
 
 
 def _route_after_review(state: RequestState) -> str:
-    return END if state.outcome is not None else "trader"
+    return "report" if state.outcome is not None else "trader"
 
 
 def build_graph(deps: Deps) -> CompiledStateGraph[RequestState, None, RequestState, RequestState]:
@@ -246,19 +282,23 @@ def build_graph(deps: Deps) -> CompiledStateGraph[RequestState, None, RequestSta
     graph.add_node("trader", functools.partial(_trader_node, deps=deps))
     graph.add_node("risk_sizing", functools.partial(_risk_sizing_node, deps=deps))
     graph.add_node("risk_review", functools.partial(_risk_review_agent_node, deps=deps))
+    graph.add_node("report", functools.partial(_report_node, deps=deps))
 
     graph.add_edge(START, "request_check")
-    graph.add_conditional_edges("request_check", _route_after_request_check, [*_ANALYST_NODES, END])
+    graph.add_conditional_edges(
+        "request_check", _route_after_request_check, [*_ANALYST_NODES, "report"]
+    )
     for node in _ANALYST_NODES:
         graph.add_edge(node, "signals_board")
     graph.add_edge("signals_board", "brain")
-    graph.add_conditional_edges("brain", _route_after_brain, ["bull", END])
+    graph.add_conditional_edges("brain", _route_after_brain, ["bull", "report"])
     graph.add_edge("bull", "bear")
     graph.add_conditional_edges(
         "bear", functools.partial(_route_after_bear, deps=deps), ["bull", "trader"]
     )
-    graph.add_conditional_edges("trader", _route_after_trader, ["risk_sizing", END])
-    graph.add_conditional_edges("risk_sizing", _route_after_sizing, ["risk_review", END])
-    graph.add_conditional_edges("risk_review", _route_after_review, ["trader", END])
+    graph.add_conditional_edges("trader", _route_after_trader, ["risk_sizing", "report"])
+    graph.add_conditional_edges("risk_sizing", _route_after_sizing, ["risk_review", "report"])
+    graph.add_conditional_edges("risk_review", _route_after_review, ["trader", "report"])
+    graph.add_edge("report", END)
 
     return graph.compile()

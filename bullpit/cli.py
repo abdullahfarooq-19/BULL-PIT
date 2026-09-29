@@ -21,6 +21,7 @@ from bullpit.doctor import Status, run_all_checks
 from bullpit.errors import BullPitError, ConfigError
 from bullpit.journal.db import journal_url, make_engine, make_sessions
 from bullpit.logging import configure_logging
+from bullpit.report.builder import render_markdown
 from bullpit.runners.request import run_request
 from bullpit.state import RequestState
 
@@ -196,6 +197,10 @@ def request(
         typer.echo(f"warning: {warning}")
 
     _print_debate_and_outcome(result)
+
+    if result.report is not None:
+        typer.echo("=== REPORT ===")
+        typer.echo(render_markdown(result.report))
 
 
 if __name__ == "__main__":

@@ -31,3 +31,10 @@ class TestM4SettingDefaults:
         assert settings.exit_stop_atr_normal == Decimal("2")
         assert settings.exit_stop_atr_wide == Decimal("3")
         assert settings.exit_reward_risk == Decimal("1.5")
+
+
+class TestM5SettingDefaults:
+    def test_vix_thresholds(self) -> None:
+        settings = _settings()
+        assert settings.vix_low_threshold == 15.0
+        assert settings.vix_high_threshold == 25.0

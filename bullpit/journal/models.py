@@ -113,6 +113,17 @@ class RecommendationRecord(Base):
     final_order: Mapped[dict[str, Any] | None] = mapped_column(JSON, default=None)
 
 
+class ReportRecord(Base):
+    """The structured report as JSON, one per request (M5-FR-12; C3: the
+    Markdown is re-rendered from it, never stored)."""
+
+    __tablename__ = "reports"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    request_id: Mapped[str] = mapped_column(ForeignKey("requests.id"), index=True, unique=True)
+    report: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
 class LLMCall(Base):
     """One completed `call_llm` invocation: cache hit, success or flagged
     fallback (M2-FR-11). A call refused by `PromptTooLarge` or
