@@ -21,8 +21,8 @@ class Base(DeclarativeBase):
 class Request(Base):
     """One research/trading request (M2 specs-plan sec2.2; M3-FR-21).
 
-    The partial unique index is the duplicate-request lock (M3-FR-3): at
-    most one `running` row per (ticker, mode).
+    The partial unique index is the duplicate-request lock (M3-FR-3, M8-FR-11):
+    at most one `running` or `awaiting_approval` row per (ticker, mode).
     """
 
     __tablename__ = "requests"
@@ -32,7 +32,7 @@ class Request(Base):
             "ticker",
             "mode",
             unique=True,
-            sqlite_where=text("status = 'running'"),
+            sqlite_where=text("status IN ('running', 'awaiting_approval')"),
         ),
     )
 
@@ -41,7 +41,7 @@ class Request(Base):
     as_of: Mapped[date]
     created_at: Mapped[datetime]
     ticker: Mapped[str]
-    status: Mapped[str]  # running | completed | rejected | failed
+    status: Mapped[str]  # running | awaiting_approval | completed | rejected | failed | expired
     status_reason: Mapped[str | None] = mapped_column(default=None)
     route: Mapped[str | None] = mapped_column(default=None)  # debate | no_trade
     warnings: Mapped[list[str] | None] = mapped_column(JSON, default=None)
@@ -165,8 +165,10 @@ class ApprovalRecord(Base):
     decision: Mapped[str]  # approved | rejected
     recommended_shares: Mapped[int]
     approved_shares: Mapped[int]
-    decided_by: Mapped[str]  # backtest_policy (M8: owner)
-    decided_at: Mapped[datetime]  # simulated: the close of `as_of`
+    decided_by: Mapped[str]  # backtest_policy | owner
+    decided_at: Mapped[datetime]  # backtest: the close of `as_of`; owner: wall-clock UTC
+    latest_price: Mapped[str | None] = mapped_column(default=None)  # the staleness check's price
+    confirmations: Mapped[list[str] | None] = mapped_column(JSON, default=None)
 
 
 class TradeRecord(Base):
@@ -194,21 +196,33 @@ class TradeRecord(Base):
     exit_reason: Mapped[str | None] = mapped_column(default=None)
     cancel_reason: Mapped[str | None] = mapped_column(default=None)
     pnl: Mapped[str | None] = mapped_column(default=None)  # (exit - entry) x shares
+    order_id: Mapped[str | None] = mapped_column(default=None)  # Alpaca IDs, live only
+    stop_order_id: Mapped[str | None] = mapped_column(default=None)
+    take_profit_order_id: Mapped[str | None] = mapped_column(default=None)
 
 
 class EquitySnapshot(Base):
-    """Account value at a session's close; `cash` includes pending reservations."""
+    """Account value at a session's close; `cash` includes pending reservations.
+    Live rows (`run_id` NULL) hold equity only: Alpaca's history has no cash split."""
 
     __tablename__ = "equity_snapshots"
-    __table_args__ = (UniqueConstraint("run_id", "date", name="uq_equity_snapshots_run_date"),)
+    __table_args__ = (
+        UniqueConstraint("run_id", "date", name="uq_equity_snapshots_run_date"),
+        Index(
+            "uq_equity_snapshots_live_date",
+            "date",
+            unique=True,
+            sqlite_where=text("run_id IS NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     run_id: Mapped[str | None] = mapped_column(
         ForeignKey("backtest_runs.id"), index=True, default=None
     )  # None for live (M8)
     day: Mapped[date] = mapped_column("date")
-    cash: Mapped[str]
-    positions_value: Mapped[str]
+    cash: Mapped[str | None] = mapped_column(default=None)
+    positions_value: Mapped[str | None] = mapped_column(default=None)
     equity: Mapped[str]
 
 

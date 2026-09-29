@@ -67,7 +67,7 @@ class SizedOrder(BaseModel, frozen=True):
 # --- Execution (M6; architecture Part 14) -----------------------------------
 
 TradeStatus = Literal["pending", "open", "closed", "cancelled", "open_at_end"]
-ExitReason = Literal["stop", "target", "window_end"]  # M8 adds "manual"
+ExitReason = Literal["stop", "target", "window_end", "manual"]
 
 
 class Trade(BaseModel, frozen=True):
@@ -87,6 +87,9 @@ class Trade(BaseModel, frozen=True):
     exit_price: Decimal | None = None  # the last close for open_at_end
     exit_reason: ExitReason | None = None
     cancel_reason: str | None = None
+    order_id: str | None = None  # Alpaca IDs; None in the simulated broker (M8 D-M8-20)
+    stop_order_id: str | None = None
+    take_profit_order_id: str | None = None
 
     @property
     def pnl(self) -> Decimal | None:
