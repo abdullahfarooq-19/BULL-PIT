@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-from sqlalchemy import JSON, ForeignKey, Index, text
+from sqlalchemy import JSON, ForeignKey, Index, UniqueConstraint, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -51,6 +51,9 @@ class Request(Base):
     finished_at: Mapped[datetime | None] = mapped_column(default=None)
     outcome: Mapped[str | None] = mapped_column(default=None)  # buy | no_trade (M4-FR-19)
     no_trade_reason: Mapped[str | None] = mapped_column(default=None)
+    run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("backtest_runs.id"), index=True, default=None
+    )  # None for a single request (M6-FR-15)
 
 
 class SignalRecord(Base):
@@ -122,6 +125,85 @@ class ReportRecord(Base):
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     request_id: Mapped[str] = mapped_column(ForeignKey("requests.id"), index=True, unique=True)
     report: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+class BacktestRun(Base):
+    """One backtest: its inputs, progress and resume point (M6-FR-15; sec10)."""
+
+    __tablename__ = "backtest_runs"
+
+    id: Mapped[str] = mapped_column(primary_key=True)  # 8 hex characters
+    created_at: Mapped[datetime]
+    finished_at: Mapped[datetime | None] = mapped_column(default=None)
+    tickers: Mapped[list[str]] = mapped_column(JSON)  # sorted
+    start_date: Mapped[date]
+    end_date: Mapped[date]  # the last decision day
+    weeks: Mapped[int]
+    seed: Mapped[int]
+    starting_cash: Mapped[str]  # Decimal as a string
+    models: Mapped[dict[str, str]] = mapped_column(JSON)  # {"small": ..., "large": ...}
+    assets: Mapped[list[dict[str, Any]]] = mapped_column(JSON)
+    git_commit: Mapped[str]
+    status: Mapped[str]  # running | paused | stopped | completed
+    status_reason: Mapped[str | None] = mapped_column(default=None)
+    checkpoint: Mapped[date | None] = mapped_column(default=None)  # last completed decision day
+
+
+class ApprovalRecord(Base):
+    """One approval decision per request (M6-FR-6; architecture Part 13)."""
+
+    __tablename__ = "approvals"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    request_id: Mapped[str] = mapped_column(ForeignKey("requests.id"), index=True, unique=True)
+    decision: Mapped[str]  # approved | rejected
+    recommended_shares: Mapped[int]
+    approved_shares: Mapped[int]
+    decided_by: Mapped[str]  # backtest_policy (M8: owner)
+    decided_at: Mapped[datetime]  # simulated: the close of `as_of`
+
+
+class TradeRecord(Base):
+    """A `domain.Trade` plus its request and run (M6 sec10). Money is text."""
+
+    __tablename__ = "trades"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    request_id: Mapped[str] = mapped_column(ForeignKey("requests.id"), index=True, unique=True)
+    run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("backtest_runs.id"), index=True, default=None
+    )  # None for live (M8)
+    client_order_id: Mapped[str] = mapped_column(index=True, unique=True)
+    ticker: Mapped[str]
+    submitted_on: Mapped[date]
+    shares: Mapped[int]  # after any downsizing at the open
+    reference_price: Mapped[str]
+    stop_loss: Mapped[str]
+    take_profit: Mapped[str]
+    status: Mapped[str]  # pending | open | closed | cancelled | open_at_end
+    entry_date: Mapped[date | None] = mapped_column(default=None)
+    entry_price: Mapped[str | None] = mapped_column(default=None)
+    exit_date: Mapped[date | None] = mapped_column(default=None)
+    exit_price: Mapped[str | None] = mapped_column(default=None)
+    exit_reason: Mapped[str | None] = mapped_column(default=None)
+    cancel_reason: Mapped[str | None] = mapped_column(default=None)
+    pnl: Mapped[str | None] = mapped_column(default=None)  # (exit - entry) x shares
+
+
+class EquitySnapshot(Base):
+    """Account value at a session's close; `cash` includes pending reservations."""
+
+    __tablename__ = "equity_snapshots"
+    __table_args__ = (UniqueConstraint("run_id", "date", name="uq_equity_snapshots_run_date"),)
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("backtest_runs.id"), index=True, default=None
+    )  # None for live (M8)
+    day: Mapped[date] = mapped_column("date")
+    cash: Mapped[str]
+    positions_value: Mapped[str]
+    equity: Mapped[str]
 
 
 class LLMCall(Base):
