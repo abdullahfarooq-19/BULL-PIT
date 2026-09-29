@@ -20,11 +20,13 @@ from sqlalchemy.orm import Session, sessionmaker
 from bullpit.config import Settings
 from bullpit.domain import Account, Asset
 from bullpit.errors import ConfigError, QuotaExhausted
+from bullpit.eval.baselines import Policy
 from bullpit.journal.models import (
     ApprovalRecord,
     BacktestRun,
     DebateTurnRecord,
     EquitySnapshot,
+    LLMCall,
     RecommendationRecord,
     ReportRecord,
     Request,
@@ -346,3 +348,87 @@ class TestRefusals:
             run = session.get(BacktestRun, run_id)
             assert run is not None
             assert (run.status, run.checkpoint) == ("running", None)
+
+
+def _forbidden(request: CompletionRequest) -> CompletionReply:
+    raise AssertionError("a code policy must make no LLM call")
+
+
+class _SingleAgentLLM:
+    """Always answers the single agent's prompt with a 6% normal buy."""
+
+    def __init__(self) -> None:
+        self.prompts: list[str] = []
+
+    def __call__(self, request: CompletionRequest) -> CompletionReply:
+        self.prompts.append(request.messages[0]["content"])
+        return CompletionReply(content=BUY, input_tokens=50, output_tokens=10, reasoning_tokens=5)
+
+
+def _bullpit_source(settings: Settings, sessions: sessionmaker[Session]) -> str:
+    source_id = _start(settings, sessions)
+    run_backtest(source_id, settings=settings, sessions=sessions, completion_fn=_script())
+    return source_id
+
+
+class TestPolicies:
+    @pytest.mark.parametrize("policy", ["always_buy", "ma_rule", "single_agent", "bullpit_fixed"])
+    def test_policies_happy_path(
+        self, settings: Settings, sessions: sessionmaker[Session], policy: Policy
+    ) -> None:
+        source_run = _bullpit_source(settings, sessions) if policy == "bullpit_fixed" else None
+        single = _SingleAgentLLM()
+        completion_fn = single if policy == "single_agent" else _forbidden
+        llm_calls_before = len(_rows(sessions, LLMCall))
+        run_id = start_backtest(
+            TICKERS,
+            START,
+            weeks=3,
+            seed=1,
+            starting_cash=Decimal("100000"),
+            settings=settings,
+            sessions=sessions,
+            asset_lookup=_lookup(),
+            policy=policy,
+            source_run=source_run,
+        )
+
+        result = run_backtest(
+            run_id, settings=settings, sessions=sessions, completion_fn=completion_fn
+        )
+
+        assert result.status == "completed"
+        with sessions() as session:
+            requests = list(session.scalars(select(Request).where(Request.run_id == run_id)))
+            request_ids = [request.id for request in requests]
+            attempts = list(
+                session.scalars(
+                    select(RecommendationRecord).where(
+                        RecommendationRecord.request_id.in_(request_ids)
+                    )
+                )
+            )
+            reports = list(
+                session.scalars(
+                    select(ReportRecord).where(ReportRecord.request_id.in_(request_ids))
+                )
+            )
+        assert len(requests) == 6  # 3 weeks x 2 tickers
+        assert reports == []  # a baseline has no report (D-M7-2)
+        buys = [attempt for attempt in attempts if attempt.action == "buy"]
+        assert buys
+        assert {(attempt.target_weight, attempt.exit_style) for attempt in buys} == (
+            {("0.06", "normal")}
+        )
+        sized = [attempt.sized_order for attempt in buys if attempt.sized_order is not None]
+        assert sized  # Stage A sized a buy at the fixed 6% weight
+        assert all(order["exit_style"] == "normal" for order in sized)
+
+        if policy == "single_agent":
+            assert len(single.prompts) == len(requests)  # one call per checked request
+            assert all(p.startswith("You are a single analyst-trader") for p in single.prompts)
+        elif policy == "bullpit_fixed":
+            assert {attempt.request_id for attempt in buys} == {f"20240705-AAPL-{run_id}"}
+            assert len(_rows(sessions, LLMCall)) == llm_calls_before  # the replay is free
+        else:
+            assert len(_rows(sessions, LLMCall)) == llm_calls_before

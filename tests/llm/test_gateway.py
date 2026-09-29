@@ -6,6 +6,7 @@ in-memory journal and a recording `sleep` (dev-plan.md sec7.1).
 from __future__ import annotations
 
 from datetime import timedelta
+from types import SimpleNamespace
 
 import pytest
 from litellm.exceptions import (
@@ -13,7 +14,7 @@ from litellm.exceptions import (
     BadRequestError,
     ServiceUnavailableError,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -104,6 +105,21 @@ def test_role_routes_to_configured_model_and_effort(
 
 
 # --- AC-2: response cache ----------------------------------------------------
+
+
+def test_model_id_with_a_colon_is_cached(
+    settings: Settings, sessions: sessionmaker[Session]
+) -> None:
+    """OpenRouter's free routes end in ":free", which Windows rejects in a path."""
+    settings = settings.model_copy(update={"llm_small_model": "qwen/qwen3.8-27b:free"})
+    provider = FakeProvider([_reply()])
+    kwargs = _kwargs(settings, sessions, provider)
+
+    call_llm(**kwargs)  # type: ignore[arg-type]
+    second = call_llm(**kwargs)  # type: ignore[arg-type]
+
+    assert second.cache_hit
+    assert len(provider.requests) == 1
 
 
 def test_repeated_call_is_cached_and_seed_change_forces_new_call(
@@ -402,3 +418,29 @@ def test_json_rejected_by_provider_is_an_empty_reply_charged_worst_case(
     assert reply.input_tokens == 100  # 400 characters at 4 per token
     assert reply.output_tokens == 2000  # the whole output cap
     assert sent["timeout"] == settings.llm_timeout_seconds
+
+
+def test_openrouter_route(settings: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
+    sent: dict[str, object] = {}
+
+    def fake_completion(**kwargs: object) -> SimpleNamespace:
+        sent.update(kwargs)
+        message = SimpleNamespace(content='{"direction": "up", "confidence": 0.5}')
+        usage = SimpleNamespace(
+            prompt_tokens=10, completion_tokens=8, completion_tokens_details=None
+        )
+        return SimpleNamespace(choices=[SimpleNamespace(message=message)], usage=usage)
+
+    routed = settings.model_copy(
+        update={"llm_provider": "openrouter", "openrouter_api_key": SecretStr("or-key")}
+    )
+    monkeypatch.setattr("bullpit.llm.gateway.get_settings", lambda: routed)
+    monkeypatch.setattr("bullpit.llm.gateway.litellm.completion", fake_completion)
+
+    reply = litellm_completion(_request())
+
+    assert sent["model"] == f"openrouter/{_MODEL}"
+    assert sent["api_key"] == "or-key"
+    assert "seed" not in sent
+    assert "response_format" not in sent
+    assert reply.input_tokens == 10

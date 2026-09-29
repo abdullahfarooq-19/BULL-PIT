@@ -15,7 +15,7 @@ import secrets
 from collections.abc import Callable, Sequence
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 import structlog
 from langgraph.graph.state import CompiledStateGraph
@@ -31,11 +31,13 @@ from bullpit.data.calendar import decision_days, session_close, sessions_between
 from bullpit.data.prices import get_prices
 from bullpit.domain import Asset, Bar, Trade
 from bullpit.errors import ConfigError, LLMUnavailable, QuotaExhausted
+from bullpit.eval.baselines import Policy, bullpit_wanted_buy
 from bullpit.graph import Deps, build_graph
 from bullpit.journal.models import (
     ApprovalRecord,
     BacktestRun,
     EquitySnapshot,
+    RecommendationRecord,
     Request,
     TradeRecord,
 )
@@ -76,9 +78,12 @@ def start_backtest(
     settings: Settings,
     sessions: sessionmaker[Session],
     asset_lookup: Broker,
+    policy: Policy = "bullpit",
+    source_run: str | None = None,
 ) -> str:
     """Checks the inputs, records the run and returns its ID. A refusal raises
-    `ConfigError` before anything is written (FR-7)."""
+    `ConfigError` before anything is written (FR-7). `source_run` is the
+    completed Bull Pit run a `bullpit_fixed` run replays (M7-FR-3)."""
     if start <= max(settings.llm_small_model_cutoff, settings.llm_large_model_cutoff):
         raise ConfigError(
             "Backtest dates must be after the models' training cutoff: "
@@ -96,6 +101,9 @@ def start_backtest(
             raise ConfigError(f"{symbol} isn't a tradable stock on Alpaca.")
         assets.append(asset)
 
+    if policy == "bullpit_fixed":
+        _check_source_run(source_run, symbols, start, weeks, sessions)
+
     run = BacktestRun(
         id=secrets.token_hex(4),
         created_at=naive_utc_now(),
@@ -109,11 +117,54 @@ def start_backtest(
         assets=[asset.model_dump(mode="json") for asset in assets],
         git_commit=git_commit(),
         status="running",
+        policy=policy,
+        source_run_id=source_run,
     )
     with sessions() as session:
         session.add(run)
         session.commit()
         return run.id
+
+
+def _check_source_run(
+    source_run: str | None,
+    symbols: list[str],
+    start: date,
+    weeks: int,
+    sessions: sessionmaker[Session],
+) -> None:
+    """A `bullpit_fixed` run needs a completed Bull Pit run on the same stocks,
+    start and length; otherwise it would be judged on different weeks."""
+    with sessions() as session:
+        source = None if source_run is None else session.get(BacktestRun, source_run)
+    if (
+        source is None
+        or source.status != "completed"
+        or source.policy != "bullpit"
+        or (source.tickers, source.start_date, source.weeks) != (symbols, start, weeks)
+    ):
+        raise ConfigError(
+            "bullpit_fixed needs --source-run: a completed bullpit run with the same "
+            "tickers, start and weeks."
+        )
+
+
+def _source_decisions(
+    sessions: sessionmaker[Session], source_run_id: str
+) -> dict[tuple[date, str], bool]:
+    """Bull Pit's buy decision per (decision day, ticker): the request's last
+    trader attempt. A request with no attempt isn't listed, so it's no trade."""
+    with sessions() as session:
+        rows = session.execute(
+            select(Request.as_of, Request.ticker, RecommendationRecord)
+            .join(RecommendationRecord, RecommendationRecord.request_id == Request.id)
+            .where(Request.run_id == source_run_id)
+            .order_by(RecommendationRecord.attempt)
+        )
+        return {
+            (as_of, ticker): bullpit_wanted_buy(attempt.action, attempt.review_decision)
+            for as_of, ticker, attempt in rows
+        }
 
 
 def run_backtest(
@@ -155,10 +206,14 @@ def run_backtest(
         starting_cash=starting_cash,
         slippage_pct=settings.sim_slippage_pct,
         assets={a["symbol"]: Asset.model_validate(a) for a in run.assets},
-        trades=[_trade_from_row(row) for row in rows],
+        trades=[trade_from_row(row) for row in rows],
     )
     graph = build_graph(
-        Deps(settings=settings, sessions=sessions, broker=broker, completion_fn=completion_fn)
+        Deps(settings=settings, sessions=sessions, broker=broker, completion_fn=completion_fn),
+        policy=cast(Policy, run.policy),
+        buy_decisions=(
+            None if run.source_run_id is None else _source_decisions(sessions, run.source_run_id)
+        ),
     )
 
     days = decision_days(run.start_date, run.weeks)
@@ -191,7 +246,7 @@ def run_backtest(
 
     with sessions() as session:
         trades = [
-            _trade_from_row(row)
+            trade_from_row(row)
             for row in session.scalars(
                 select(TradeRecord).where(TradeRecord.run_id == run_id).order_by(TradeRecord.id)
             )
@@ -229,7 +284,7 @@ def _decimal(value: str | None) -> Decimal | None:
     return None if value is None else Decimal(value)
 
 
-def _trade_from_row(row: TradeRecord) -> Trade:
+def trade_from_row(row: TradeRecord) -> Trade:
     return Trade.model_validate(
         {
             "client_order_id": row.client_order_id,

@@ -1,7 +1,7 @@
 """Typer entry points. `doctor` is the only command from M0; `request` (M3)
 runs the graph end to end for one ticker (D-M3-6: a way to run and inspect
 the graph long before the dashboard); `backtest` (M6) runs or resumes a
-weekly backtest.
+weekly backtest; `eval` (M7) writes the results page from finished runs.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ import sys
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
-from typing import Annotated, Literal, cast
+from typing import Annotated, Literal, cast, get_args
 
 import typer
 from alembic import command as alembic_command
@@ -21,6 +21,8 @@ from bullpit.clock import Clock, LiveClock, SimClock
 from bullpit.config import Settings, get_settings
 from bullpit.doctor import Status, run_all_checks
 from bullpit.errors import BullPitError, ConfigError
+from bullpit.eval.baselines import Policy
+from bullpit.eval.report import evaluate
 from bullpit.journal.db import journal_url, make_engine, make_sessions
 from bullpit.logging import configure_logging
 from bullpit.report.builder import render_markdown
@@ -237,6 +239,12 @@ def backtest(
     seed: Annotated[int | None, typer.Option("--seed")] = None,
     cash: Annotated[str | None, typer.Option("--cash")] = None,
     resume: Annotated[str | None, typer.Option("--resume", help="Run ID to resume")] = None,
+    policy: Annotated[
+        str | None, typer.Option("--policy", help="bullpit (default), single_agent, ...")
+    ] = None,
+    source_run: Annotated[
+        str | None, typer.Option("--source-run", help="bullpit_fixed: the Bull Pit run to replay")
+    ] = None,
 ) -> None:
     """Start a weekly backtest, or continue one with --resume RUN_ID."""
     try:
@@ -251,13 +259,17 @@ def backtest(
 
     try:
         if resume is not None:
-            if any(option is not None for option in (tickers, start, weeks, seed, cash)):
+            given = (tickers, start, weeks, seed, cash, policy, source_run)
+            if any(option is not None for option in given):
                 typer.echo("--resume takes no other options: the run keeps its own inputs")
                 raise typer.Exit(code=2)
             run_id = resume
         else:
             if tickers is None or start is None:
                 typer.echo("--tickers and --start are required unless --resume is given")
+                raise typer.Exit(code=2)
+            if policy is not None and policy not in get_args(Policy):
+                typer.echo(f"--policy must be one of: {', '.join(get_args(Policy))}")
                 raise typer.Exit(code=2)
             run_id = start_backtest(
                 tickers.split(","),
@@ -268,6 +280,8 @@ def backtest(
                 settings=settings,
                 sessions=sessions,
                 asset_lookup=make_alpaca_broker(settings),
+                policy=cast(Policy, policy or "bullpit"),
+                source_run=source_run,
             )
     except (ValueError, InvalidOperation):
         typer.echo("--start must be YYYY-MM-DD and --cash a number")
@@ -289,6 +303,32 @@ def backtest(
         typer.echo(f"Paused: {result.reason}. Resume with: bullpit backtest --resume {run_id}")
         raise typer.Exit(code=3)
     _print_run_summary(result)
+
+
+@app.command(name="eval")
+def eval_command(
+    runs: Annotated[str, typer.Option("--runs", help="Comma-separated completed run IDs")],
+    out: Annotated[Path, typer.Option("--out", help="Output directory")] = Path("docs/results"),
+) -> None:
+    """Write results.md and the charts for finished backtest runs."""
+    try:
+        settings = get_settings()
+    except BullPitError as exc:
+        typer.echo(f"config          FAIL    {exc}")
+        raise typer.Exit(code=1) from None
+
+    configure_logging(settings)
+    _upgrade_journal_schema(settings)
+    sessions = make_sessions(make_engine(journal_url(settings)))
+    try:
+        path = evaluate(runs.split(","), out, settings=settings, sessions=sessions)
+    except ConfigError as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(code=2) from None
+    except BullPitError as exc:
+        typer.echo(f"Error: {exc}")
+        raise typer.Exit(code=1) from None
+    typer.echo(f"wrote {path}")
 
 
 if __name__ == "__main__":

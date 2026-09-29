@@ -3,6 +3,9 @@
 are ever bound per build: settings, journal sessions and the broker
 (architecture sec4's dependency injection).
 
+M7 adds the baseline policies (M7 specs-plan sec9.3): a short graph from the
+same builder, so only the buy decision differs from Bull Pit.
+
 Dependencies (settings, journal sessions, the broker, the LLM completion
 function) are bound when the graph is built and never stored in state, so
 `RequestState` stays serialisable for M8's checkpointer.
@@ -11,8 +14,9 @@ function) are bound when the graph is built and never stored in state, so
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from datetime import date
 from decimal import Decimal
 
 from langgraph.graph import END, START, StateGraph
@@ -25,14 +29,16 @@ from bullpit.agents.fundamentals import fundamentals_node
 from bullpit.agents.risk_review import risk_review_node
 from bullpit.agents.sentiment import sentiment_node
 from bullpit.agents.signals_board import build_board
-from bullpit.agents.technical import technical_node
-from bullpit.agents.trader import trader_node
+from bullpit.agents.single_agent import single_agent_node
+from bullpit.agents.technical import bars_frame, technical_node
+from bullpit.agents.trader import attempt_update, trader_node
 from bullpit.broker.base import Broker
 from bullpit.clock import utc_now
 from bullpit.config import Settings
 from bullpit.data.prices import get_market_context
 from bullpit.domain import ExitStyle
 from bullpit.errors import DataUnavailable, LookaheadViolation, QuotaExhausted
+from bullpit.eval.baselines import Policy, always_buy, fixed_recommendation, ma_rule
 from bullpit.llm.gateway import CompletionFn, litellm_completion
 from bullpit.llm.schemas import Signal
 from bullpit.logging import get_logger
@@ -41,6 +47,7 @@ from bullpit.report.model import MarketContext
 from bullpit.request_check import request_check_node
 from bullpit.risk.rules import stage_a
 from bullpit.state import RequestState
+from bullpit.tools.indicators import Indicators, compute_indicators
 
 logger = get_logger(__name__)
 
@@ -52,6 +59,15 @@ _EXIT_STOP_ATR_SETTING: dict[ExitStyle, str] = {
 }
 
 _AnalystFn = Callable[..., dict[str, object]]
+
+_RULES: dict[Policy, Callable[[Indicators], bool]] = {"always_buy": always_buy, "ma_rule": ma_rule}
+_RULE_REASONS: dict[Policy, dict[bool, str]] = {
+    "always_buy": {True: "Buys every week."},
+    "ma_rule": {
+        True: "Close is above SMA 50.",
+        False: "Close is not above SMA 50, or SMA 50 isn't available.",
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -250,7 +266,105 @@ def _route_after_review(state: RequestState) -> str:
     return "report" if state.outcome is not None else "trader"
 
 
-def build_graph(deps: Deps) -> CompiledStateGraph[RequestState, None, RequestState, RequestState]:
+def _indicators_node(state: RequestState) -> dict[str, object]:
+    if state.prices is None:
+        raise ValueError("indicators ran before request_check populated prices")
+    return {"indicators": compute_indicators(bars_frame(state.prices.bars))}
+
+
+def _decide_node(
+    state: RequestState,
+    *,
+    deps: Deps,
+    policy: Policy,
+    buy_decisions: Mapping[tuple[date, str], bool] | None,
+) -> dict[str, object]:
+    """The policy's buy decision (M7-FR-3, FR-4). A rule has no trader, so its
+    decision is sized at the fixed baseline weight and exit style (Q8)."""
+    if policy == "single_agent":
+        return single_agent_node(
+            state,
+            settings=deps.settings,
+            sessions=deps.sessions,
+            completion_fn=deps.completion_fn,
+        )
+    if state.indicators is None:
+        raise ValueError("decide ran before the indicators")
+    if policy == "bullpit_fixed":
+        if buy_decisions is None:
+            raise ValueError("bullpit_fixed needs the source run's decisions")
+        buy = buy_decisions.get((state.as_of, state.ticker), False)
+        reason = "Replayed from the Bull Pit run's decision."
+    else:
+        buy = _RULES[policy](state.indicators)
+        reason = _RULE_REASONS[policy][buy]
+    recommendation = fixed_recommendation(
+        state.ticker,
+        buy,
+        weight=deps.settings.baseline_target_weight,
+        exit_style=deps.settings.baseline_exit_style,
+        reason=reason,
+    )
+    return attempt_update(state, recommendation, [], actor="Baseline")
+
+
+def _accept_node(state: RequestState) -> dict[str, object]:
+    """Stage A sized the attempt; with no Stage B review, that order is final."""
+    return {"outcome": "buy", "sized_order": state.attempts[-1].sized_order}
+
+
+def _policy_route_after_request_check(state: RequestState) -> str:
+    return END if state.rejection is not None else "indicators"
+
+
+def _policy_route_after_decide(state: RequestState) -> str:
+    return END if state.outcome is not None else "risk_sizing"
+
+
+def _policy_route_after_sizing(state: RequestState) -> str:
+    return END if state.outcome is not None else "accept"
+
+
+def _build_policy_graph(
+    deps: Deps, policy: Policy, buy_decisions: Mapping[tuple[date, str], bool] | None
+) -> CompiledStateGraph[RequestState, None, RequestState, RequestState]:
+    """Request check, indicators, the policy's decision, Stage A, accept. No
+    analysts, debate, Stage B review or report (D-M7-1, D-M7-2)."""
+    graph = StateGraph(RequestState)
+    graph.add_node(
+        "request_check",
+        functools.partial(request_check_node, settings=deps.settings, broker=deps.broker),
+    )
+    graph.add_node("indicators", _indicators_node)
+    graph.add_node(
+        "decide",
+        functools.partial(_decide_node, deps=deps, policy=policy, buy_decisions=buy_decisions),
+    )
+    graph.add_node("risk_sizing", functools.partial(_risk_sizing_node, deps=deps))
+    graph.add_node("accept", _accept_node)
+
+    graph.add_edge(START, "request_check")
+    graph.add_conditional_edges(
+        "request_check", _policy_route_after_request_check, ["indicators", END]
+    )
+    graph.add_edge("indicators", "decide")
+    graph.add_conditional_edges("decide", _policy_route_after_decide, ["risk_sizing", END])
+    graph.add_conditional_edges("risk_sizing", _policy_route_after_sizing, ["accept", END])
+    graph.add_edge("accept", END)
+    return graph.compile()
+
+
+def build_graph(
+    deps: Deps,
+    *,
+    policy: Policy = "bullpit",
+    buy_decisions: Mapping[tuple[date, str], bool] | None = None,
+) -> CompiledStateGraph[RequestState, None, RequestState, RequestState]:
+    """The M6 graph for `bullpit`; any other policy gets the short policy graph.
+    `buy_decisions` (by decision day and ticker) is for `bullpit_fixed` only."""
+    if policy != "bullpit":
+        return _build_policy_graph(deps, policy, buy_decisions)
+
     graph = StateGraph(RequestState)
 
     graph.add_node(

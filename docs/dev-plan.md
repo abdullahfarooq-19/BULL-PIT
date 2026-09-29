@@ -2,7 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Revision 5: all decisions resolved; M5 accepted, M6 in progress |
+| **Status** | Revision 6: D13 added (M7 as a Qwen-only pilot); M6 accepted, M7 built and awaiting acceptance |
+| **Changes in revision 6** | D13 added ([§3](#3-deviations-from-the-architecture-roadmap)), Q5 answered ([§10](#10-decisions-log)); M7 becomes a pilot evaluation; `architecture.md` v2.5 |
 | **Changes in revision 5** | D10 and D11 added ([§3](#3-deviations-from-the-architecture-roadmap)), approved with the M3 specs; `architecture.md` v2.2 |
 | **Date** | 2026-09-28 |
 | **Changes in revision 4** | Scope review of M1–M9 ([§10.1](#101-scope-review-revision-4)): work that doesn't change the architecture cut or simplified (C1–C13); token measurement, the pinned-model guard and the loss-warning wiring moved to the milestones that can actually do them (C14–C16). `architecture.md` unchanged |
@@ -190,7 +191,7 @@ bull-pit/
 
 ## 3. Deviations from the architecture roadmap
 
-The architecture's M0–M9 order is kept. Carrying it out properly needs a few pieces to arrive **earlier** than the architecture roadmap implies, because later milestones depend on them (D1–D7). None of these change the system's behaviour. D8–D12 **do** change the architecture, and `architecture.md` (v2.1, v2.2, v2.4) has been updated to match.
+The architecture's M0–M9 order is kept. Carrying it out properly needs a few pieces to arrive **earlier** than the architecture roadmap implies, because later milestones depend on them (D1–D7). None of these change the system's behaviour. D8–D13 **do** change the architecture, and `architecture.md` (v2.1, v2.2, v2.4, v2.5) has been updated to match.
 
 **Status: D1–D9 approved by the owner on 2026-09-28; D10 and D11 approved the same day with the M3 specs.**
 
@@ -208,6 +209,7 @@ The architecture's M0–M9 order is kept. Carrying it out properly needs a few p
 | D10 | **The fundamentals LLM judges filing-based ratios only; P/E is code-computed evidence for the debate and report.** Architecture Part 6 updated (v2.2) | Part 6 asked for the LLM to read P/E *and* for the signal to be cached per filing. P/E changes daily, so the cached verdict would go stale or, reused across backtest dates, leak a later price. Owner chose this option ([M3 specs-plan](milestones/M3-analysts/specs-plan.md) Q1) |
 | D11 | **Code writes every evidence fact; the analyst LLMs only judge** (direction and confidence; sentiment: per-headline scores). The signal format is unchanged. Architecture Part 5 updated (v2.2) | No LLM-written number can reach the debate or report, and the evidence registry is exact ([M3 specs-plan](milestones/M3-analysts/specs-plan.md) D-M3-1) |
 | D12 | **The simulated broker checks exits on the entry day too**, with that day's low and high, stop first. Architecture Part 14 updated (v2.4) | A daily bar's low and high all happen after the open, while the bracket is live. Skipping the entry day would miss day-one stops: an optimistic bias ([M6 specs-plan](milestones/M6-backtest/specs-plan.md) D-M6-3, Q1) |
+| D13 | **M7's AI runs use `qwen/qwen3.8-27b:free` on OpenRouter for both roles**, over a window after its 2026-08-14 release; the pinned gpt-oss models stay the default everywhere else. M7 is a **pilot** (2 stocks × 2 weeks, one seed); the full run, repeat seeds and debate impact are carried over. Architecture §12, §13, §16 updated (v2.5) | The owner must finish tonight and Groq's daily quota is nearly used. Qwen can't have seen prices after its release, so the look-ahead rule holds ([M7 specs-plan](milestones/M7-evaluation/specs-plan.md) D-M7-9, D-M7-10) |
 
 ---
 
@@ -667,6 +669,7 @@ The journal grows one milestone at a time, and each step is one Alembic migratio
 | M4 | `debate_turns`, `recommendations` |
 | M5 | `reports` |
 | M6 | `approvals`, `trades`, `equity_snapshots`, `backtest_runs` ➕ (run config, progress, resume point) |
+| M7 | `backtest_runs.policy`, `backtest_runs.source_run_id` (columns only, migration `0006`) |
 | M8 | Live columns on `trades` (broker order IDs, leg IDs), and LangGraph checkpoint tables (managed by the checkpointer) |
 
 ➕ = not listed in architecture Part 15; added for resumable backtests and evaluation bookkeeping.
@@ -710,6 +713,7 @@ Owner answers recorded on 2026-09-28.
 | Q11 | Repeat-run scope for M7, given 200K tokens/day per model | **Repeat runs:** 3 seeds × **13 weeks** × 3 stocks, on the same window, for each LLM approach (gives a fair mean and range). **Headline run:** seed 1 continued to the full **26 weeks**; its first 13 weeks come from the cache, so they cost nothing. The single agent is about one call per request, so it's cheap. Bull Pit (fixed sizing) is free. Estimated total: about 3–5 weeks of free quota, running in the background while M8 is built (M7 and M8 are independent). Revisit only if the measured per-request token counts (M5-AC-7) are far off the estimate | Keeps three seeded runs as the architecture requires while fitting the free tier |
 | — | Revert D8? (owner asked to revert only if the original was better) | **D8 kept: brain routing stays in code** | Debate-or-skip is a threshold decision: code gives the same answer every time, is easy to test, and saves an LLM call on every request, which matters with the 8K tokens-per-minute limit. The original design already limited the LLM to choosing between fixed routes, so it added cost without adding judgment |
 | D-M6-22 | M6's real run: 26 weeks × 3 stocks, or shorter? | **2 weeks × 1 stock**, with a forced quota pause and resume; the 26-week, 3-stock run moves to M7 as its headline run. Architecture §16's M6 done-when updated (v2.4) | Groq's free tier gives the large model 200K tokens per rolling 24 hours, about 80K of it free on 2026-09-29. The runner is the same code at any length, and the automated resume test proves the rest ([M6 specs-plan](milestones/M6-backtest/specs-plan.md) D-M6-22) |
+| Q5 | How to finish M7 tonight | **Qwen only** (D13): a pilot on OpenRouter's free `qwen/qwen3.8-27b:free`, 2 stocks × 2 weeks; the full run, repeat seeds and debate impact carried over | One day of free quota covers about 50 requests ([M7 specs-plan](milestones/M7-evaluation/specs-plan.md) §7.1) |
 
 Nothing is open. Q3 and Q4 are owner actions needed before M0 implementation starts (not before M0 docs).
 

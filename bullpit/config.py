@@ -13,11 +13,13 @@ from datetime import date
 from decimal import Decimal
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from bullpit.broker.safety import assert_paper_url
+from bullpit.domain import ExitStyle
 from bullpit.errors import ConfigError
 
 _EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -47,6 +49,8 @@ class Settings(BaseSettings):
     groq_api_key: SecretStr | None = None
     llm_small_model: str = "openai/gpt-oss-20b"
     llm_large_model: str = "openai/gpt-oss-120b"
+    llm_provider: Literal["groq", "openrouter"] = "groq"
+    openrouter_api_key: SecretStr | None = None
 
     # --- SEC EDGAR -----------------------------------------------------
     sec_contact_email: str | None = None
@@ -91,6 +95,11 @@ class Settings(BaseSettings):
     backtest_starting_cash: Decimal = Decimal("100000")
     backtest_weeks: int = 26
 
+    # --- Evaluation (M7) ------------------------------------------------------
+    baseline_target_weight: Decimal = Decimal("0.06")
+    baseline_exit_style: ExitStyle = "normal"
+    eval_calibration_bins: int = 5
+
     # --- LLM gateway (M2) -------------------------------------------------
     llm_reasoning_effort_small: str = "low"
     llm_reasoning_effort_large: str = "low"
@@ -123,6 +132,7 @@ class Settings(BaseSettings):
         "alpaca_api_key",
         "alpaca_secret_key",
         "groq_api_key",
+        "openrouter_api_key",
         "sec_contact_email",
         "langfuse_public_key",
         "langfuse_secret_key",
@@ -163,6 +173,7 @@ class Settings(BaseSettings):
             "ALPACA_API_KEY": self.alpaca_api_key,
             "ALPACA_SECRET_KEY": self.alpaca_secret_key,
             "GROQ_API_KEY": self.groq_api_key,
+            "OPENROUTER_API_KEY": self.openrouter_api_key,
             "SEC_CONTACT_EMAIL": self.sec_contact_email,
         }
         if name not in field_map:

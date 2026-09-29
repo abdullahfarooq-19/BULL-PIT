@@ -46,3 +46,12 @@ class TestM6SettingDefaults:
         assert settings.sim_slippage_pct == Decimal("0.0005")
         assert settings.backtest_starting_cash == Decimal("100000")
         assert settings.backtest_weeks == 26
+
+
+class TestM7SettingDefaults:
+    def test_evaluation_defaults(self) -> None:
+        settings = _settings()
+        assert settings.baseline_target_weight == Decimal("0.06")
+        assert settings.baseline_exit_style == "normal"
+        assert settings.eval_calibration_bins == 5
+        assert settings.llm_provider == "groq"

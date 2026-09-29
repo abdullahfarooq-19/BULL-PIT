@@ -51,3 +51,11 @@ Visa and Mastercard (Financials) and Johnson & Johnson, AbbVie (Health Care) wer
 - The three stocks are large, long-listed companies, so today's asset lookup (D-M6-14) is valid across the window.
 - The stocks are chosen once and reused (M7's repeat runs, headline run), so results across runs are comparable. Surviving large caps are still a survivorship-friendly universe by nature; the report should say so.
 - Sector weights and Berkshire's market cap are not exact for the date. Nothing depends on them beyond the ranking and the 50% margin.
+
+## Addendum (M7, D-M7-11): the pilot window
+
+M7's Qwen pilot runs on 2026-08-17 to 2026-08-28 (decision days 2026-08-21 and 2026-08-28) with the first two stocks of the table, `MSFT` and `BRK.B`, in the same order. They were chosen with 2024 information, which is before the new start, so the rule still holds. The checks were repeated on 2026-09-29 through the data layer and Alpaca, for 2026-08-17 to 2026-09-04 (the evaluation also reads the week after the last decision day):
+
+- No split for either stock in the window.
+- Both are far under $10,000 a share (highest close in the window: `MSFT` $513.53, `BRK.B` $508.13).
+- Alpaca returns both as tradable and active; SEC filings and 300 sessions of prices load for each.

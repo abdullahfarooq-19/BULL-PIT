@@ -14,10 +14,10 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from bullpit.agents.debate import bear_node, bull_node
 from bullpit.agents.risk_review import risk_review_node
-from bullpit.agents.trader import trader_node
+from bullpit.agents.trader import exit_style_descriptions, trader_node
 from bullpit.config import Settings
 from bullpit.domain import SizedOrder
-from bullpit.llm.gateway import _estimate_tokens
+from bullpit.llm.gateway import _estimate_tokens, _render
 from bullpit.llm.schemas import Evidence, Signal
 from bullpit.report.builder import market_context, report_node
 from bullpit.state import CheckedPoint, DebateTurn, Recommendation, RiskVerdict, TradeAttempt
@@ -257,4 +257,31 @@ class TestReportWorstCase:
 
         prompt = llm.prompts[0]
         assert prompt.startswith(FIRST_LINE_REPORT)
+        assert _estimate_tokens(prompt, settings) < settings.llm_tpm_limit
+
+
+class TestSingleAgentWorstCase:
+    def test_single_agent_with_every_fact_stays_under_the_ceiling(self, settings: Settings) -> None:
+        facts = [f"T{i}" for i in range(1, 7)] + [f"F{i}" for i in range(1, 6)]
+        evidence = [{"id": fact_id, "fact": "A" * 120} for fact_id in facts]
+        evidence += [
+            {"id": f"S{i}", "fact": "2026-08-21: " + '"' + "A" * 120 + '"'} for i in range(1, 16)
+        ]
+
+        prompt, _ = _render(
+            "single_agent.md",
+            {
+                "ticker": "AAPL",
+                "company_name": "Apple Inc.",
+                "evidence": evidence,
+                "cash": Decimal("96000"),
+                "equity": Decimal("100000"),
+                "held_value": Decimal("4000"),
+                "held_pct": 4.0,
+                "max_target_weight_pct": 10.0,
+                "exit_styles": exit_style_descriptions(settings),
+            },
+        )
+
+        assert prompt.startswith("You are a single analyst-trader")
         assert _estimate_tokens(prompt, settings) < settings.llm_tpm_limit
