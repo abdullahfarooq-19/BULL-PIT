@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Status** | Phase 1 (T-1 to T-15) complete, 2026-09-28. Phase 2 (market hours) and Phase 3 (git/CI) still pending |
-| **Date** | 2026-09-28 |
+| **Status** | All tasks M0-T-1 to M0-T-24 done, 2026-09-30. Walk-through in M0-T-25 below; awaiting explicit owner acceptance before tagging `m0` |
+| **Date** | 2026-09-28 (started), 2026-09-30 (last task) |
 | **Specs and plan** | [`specs-plan.md`](specs-plan.md) (approved 2026-09-28) |
-| **Branch** | `m0-foundations` (created in the git phase; work is local on the working tree until then) |
+| **Branch** | `m0-foundations` (merged into `master` as part of the M1 merge; later work committed directly to whichever branch was current) |
 
 Each task is about half a day or less, lists the files it touches, the requirement or acceptance criterion it serves, and how it's verified. A task is ticked when its verification passes. The **Commit** column stays `—` until the git phase (the owner has put commits and pushes on hold, [specs-plan §8](specs-plan.md#8-open-questions-for-the-owner)); hashes are filled in then.
 
@@ -44,7 +44,7 @@ Phases:
 |---|---|---|---|---|---|---|
 | [x] | M0-T-16 | **Bracket `place`.** Run `alpaca_bracket.py place --confirm`: 1-share GTC market bracket, poll until filled, re-submit the same `client_order_id`. If GTC brackets are refused, stop and bring it to the owner (specs-plan §11.1) | `scripts/spikes/output/` (raw only) | FR-18, AC-5, A7, A8 | Raw output shows the fill, both legs and their statuses, and the duplicate-ID result | — |
 | [x] | M0-T-17 | **Bracket `inspect`** in the next session: are both legs still active after the overnight close? | `scripts/spikes/output/` | AC-5, A7 | Raw output shows leg statuses after the close | — |
-| [ ] | M0-T-18 | **Bracket `close`.** Cancel the legs, market-sell the share, read the final state | `scripts/spikes/output/` | AC-5 | Position flat; no open orders left (read-back) | — |
+| [x] | M0-T-18 | **Bracket `close`.** Cancel the legs, market-sell the share, read the final state | `scripts/spikes/output/` | AC-5 | Position flat; no open orders left (read-back) | — |
 | [x] | M0-T-19 | **Findings final pass and ADR-0002.** Fill A7 and A8 in `findings.md`; write `docs/adr/0002-bracket-order-tif-and-legs.md` (Accepted) from them | `findings.md`, `docs/adr/0002-bracket-order-tif-and-legs.md` | AC-5, AC-6, AC-10 | Every row in `findings.md` has a verdict; owner review | — |
 
 ## Phase 3 — Git and CI (later, when the owner says so)
@@ -359,10 +359,82 @@ and `client_order_id` uniqueness is enforced by Alpaca itself.
 The spike's test position (1 share of F) is still open; `close` (M0-T-18)
 runs next time the market is open.
 
----
+### M0-T-18: bracket `close` (final outcome)
+
+Run 2026-09-30, market open. The take-profit leg was cancelled and the
+share sold at market:
+
+```
+cancelled eaabbe3a-071f-4be1-9651-fb538cf80645
+{'closed': True, 'order': {'symbol': 'F', 'qty': '1', 'status': 'OrderStatus.PENDING_NEW', ...}}
+# polled:
+status: OrderStatus.FILLED  filled_avg_price: 12.17  filled_qty: 1
+```
+
+Entry $12.57, exit $12.17: a realised loss of $0.40 on 1 share, closed
+manually (neither the stop at $11.94 nor the target at $13.19 was
+reached). Confirmed flat afterwards: `get_open_position("F")` raises
+(no position), `get_orders()` returns none for F. The spike's full
+lifecycle -- validate, place, inspect, close -- is now complete.
+
+### M0-T-25: acceptance walk-through
+
+| AC | Status | Evidence |
+|---|---|---|
+| AC-1 | Pass | T-24: real `git clone -b m0-foundations`, `uv sync --locked`, `uv run pytest` (28 passed then; 168+ now with M1-M4 added) |
+| AC-2 | Pass | T-23: `ci-check-lint-failure` branch, `check` job red at Lint, deleted |
+| AC-3 | Pass | `tests/broker/test_paper_guard.py`, 28 automated cases, still green |
+| AC-4 | Pass | T-7 evidence: normal run all `OK`; `ALPACA_API_KEY` blanked gives one clear `FAIL`, dependents `SKIP`, no traceback, exit 1 |
+| AC-5 | Pass | T-13/T-16/T-17/T-18: validate (rejections), place (real fill $12.57), inspect (unchanged overnight), close (final fill $12.17, flat) -- the full lifecycle, all in `findings.md` |
+| AC-6 | Pass | `findings.md` covers A1-A16, every row has a verdict; 4 corrections (C1-C4) raised as open questions for M1/M2/M3 |
+| AC-7 | Pass | T-21 (local: gitleaks + ruff S105 both blocked a fake key) and T-23 (CI: found gitleaks-action's default version missed it, fixed by pinning `GITLEAKS_VERSION`, re-verified red) |
+| AC-8 | Pass | T-2: `.env.example` tracked, `.env`/`data_cache/`/`logs/`/`*.db` ignored, verified with `git check-ignore -v` |
+| AC-9 | Pass | T-3: scratch file with `date.today()` fails `ruff check` with the Clock message (`TID251`) |
+| AC-10 | Pass | ADR-0001 and ADR-0002 both `Accepted`; README quick start verified working in both a temp-copy and a real fresh clone |
+
+All 10 acceptance criteria pass. Every task M0-T-1 through M0-T-24 is
+done; this is the retrospective and formal acceptance record for
+M0-T-25.
 
 ## Retrospective
 
-Written at acceptance.
+**What differed from the plan.** The owner asked to hold off on git
+commits and pushes at first (specs-plan §8, Q-M0-1/2), which split the
+work into three phases instead of one; that turned out well, since Phase
+1's local-only work and Phase 3's git/CI work being separate made each
+easier to verify in isolation. The market-hours phase (bracket `place`,
+`inspect`, `close`) ended up spanning three separate days (2026-09-28
+place/inspect, 2026-09-30 close) because of how market hours and session
+timing fell, not because of any blocker -- each step just waited for its
+own market-open or market-closed window, checked against Alpaca's own
+clock rather than assumed from the PKT conversion.
 
-*(empty)*
+**A real bug found and fixed during M0 itself.** The CI-failure check
+(M0-AC-7) found that `gitleaks-action@v2`'s default gitleaks version
+missed a fake secret that both the pinned pre-commit hook and ruff's
+`S105` rule caught. Pinning `GITLEAKS_VERSION` to match pre-commit fixed
+it, verified by re-running the same fake-key test and watching the
+`secrets` job go red correctly. This is exactly what M0's spike-and-verify
+phase is for.
+
+**Process gap.** M0 was never tagged `m0` at the time other milestones
+started depending on it -- M1 through M8 were built in other sessions
+while M0-T-18 and T-19 (the market-hours finish and ADR-0002) were still
+open, which the dev plan's own Definition of Ready (§1.4: "every
+dependency milestone has been accepted") says shouldn't happen. It didn't
+cause any actual problem, because M0's own deliverables (the scaffold,
+guard, doctor, CI) were substantively complete and correct from Phase 1
+onward, and Phase 2's remaining pieces (A7 overnight persistence, A8
+idempotency) were about the *live-trading* path M8 depends on, not M1-M7.
+Still, the tag should have existed before M1 started. Tagged now,
+retroactively, once this document records full acceptance.
+
+**Measured numbers.** 28 automated tests at Phase-1 completion (all
+M0's own); one real paper trade round-tripped end to end (buy $12.57,
+sell $12.17, -$0.40 realised); zero secrets ever reached the repository
+or a log line; total Groq spend across the spikes was 1,143 tokens.
+
+**Carry-overs to later milestones**, already recorded as open questions
+in `findings.md`: C1 (M3's ETF rejection reasoning), C2 (M1 needs Alpaca
+news pagination), C3 (M1's yfinance `auto_adjust` ADR), C4 (M2's output
+budget must leave headroom past reasoning tokens).

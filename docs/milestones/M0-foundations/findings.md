@@ -59,6 +59,13 @@ Total tokens spent across all Groq spike calls: **1,143** (well under the 10K bu
 | C3 | M1 | yfinance's `auto_adjust` defaults to `True` (A16); the adjustment-policy ADR should say explicitly whether Bull Pit keeps that default or requests unadjusted prices, and why — **Answered:** ADR-0003 (point-in-time prices): raw prices stored, split-adjusted only up to `as_of`, dividends never adjusted |
 | C4 | M2 | A small `max_tokens` cap can silently starve visible content because reasoning tokens are drawn from the same budget (A5); the gateway's per-call ceiling and per-role `max_tokens` must leave headroom past the *measured* reasoning-token cost, not just the visible-answer length — **Answered:** every call sends `max_tokens = llm_output_allowance_tokens` (2000), and empty content counts as an invalid reply that triggers the validation retry and, on a second failure, the flagged safe default (M2-FR-4a). In JSON mode the starvation shows up as Groq rejecting the generation (`json_validate_failed`, "max completion tokens reached"), which the gateway handles the same way (M2-FR-10, specs-plan §7.2 R11). M2-AC-7's real measurement (`measure_tokens.py`) found 55-59 reasoning tokens per call at `low` effort on a full analyst-shaped prompt, far inside the 2000 allowance |
 
-## Still pending
+## Final outcome (M0-T-18)
 
-- The spike's test position (1 share of F, bought at $12.57) is still open. `close` runs next time the market is open, to flatten it and record the final outcome (M0-T-18).
+The spike's test position was closed 2026-09-30, market open: the
+take-profit leg was cancelled and the share sold at market, filling
+immediately at **$12.17**. Entry was $12.57, so the round trip realised a
+loss of $0.40/share ($0.40 total on 1 share) -- closed manually, well
+inside the stop ($11.94) and take-profit ($13.19) band, neither of which
+triggered. Position confirmed flat and no open orders remain on F
+afterwards. This is the spike's only real trade; it exercised the manual
+market-sell path, not the stop or target legs.
