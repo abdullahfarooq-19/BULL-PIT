@@ -2,7 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Revision 7: D14 added (TradingView Lightweight Charts); M7 accepted, M8 in progress |
+| **Status** | Revision 8: D15 to D18 added (report explanations, order box, cancel, advanced mode); M7 accepted, M8 built and awaiting acceptance, M11.1 in progress |
+| **Changes in revision 8** | D15 to D18 added ([§3](#3-deviations-from-the-architecture-roadmap)); M11.1 added to §4 and §5 and its report-page and order-box part taken out of M9; §8 gets the `0008` row; `architecture.md` v2.7 |
 | **Changes in revision 7** | D14 added ([§3](#3-deviations-from-the-architecture-roadmap)); §2.1 frontend row, §2.3 layout (`api/` → `bullpit/api/`), §8 M8 row and §10.1 C6 updated; `architecture.md` v2.6 |
 | **Changes in revision 6** | D13 added ([§3](#3-deviations-from-the-architecture-roadmap)), Q5 answered ([§10](#10-decisions-log)); M7 becomes a pilot evaluation; `architecture.md` v2.5 |
 | **Changes in revision 5** | D10 and D11 added ([§3](#3-deviations-from-the-architecture-roadmap)), approved with the M3 specs; `architecture.md` v2.2 |
@@ -192,7 +193,7 @@ bull-pit/
 
 ## 3. Deviations from the architecture roadmap
 
-The architecture's M0–M9 order is kept. Carrying it out properly needs a few pieces to arrive **earlier** than the architecture roadmap implies, because later milestones depend on them (D1–D7). None of these change the system's behaviour. D8–D14 **do** change the architecture, and `architecture.md` (v2.1, v2.2, v2.4, v2.5, v2.6) has been updated to match.
+The architecture's M0–M9 order is kept. Carrying it out properly needs a few pieces to arrive **earlier** than the architecture roadmap implies, because later milestones depend on them (D1–D7). None of these change the system's behaviour. D8–D18 **do** change the architecture, and `architecture.md` (v2.1, v2.2, v2.4, v2.5, v2.6, v2.7) has been updated to match.
 
 **Status: D1–D9 approved by the owner on 2026-09-28; D10 and D11 approved the same day with the M3 specs.**
 
@@ -212,6 +213,10 @@ The architecture's M0–M9 order is kept. Carrying it out properly needs a few p
 | D12 | **The simulated broker checks exits on the entry day too**, with that day's low and high, stop first. Architecture Part 14 updated (v2.4) | A daily bar's low and high all happen after the open, while the bracket is live. Skipping the entry day would miss day-one stops: an optimistic bias ([M6 specs-plan](milestones/M6-backtest/specs-plan.md) D-M6-3, Q1) |
 | D13 | **M7's AI runs use `qwen/qwen3.8-27b:free` on OpenRouter for both roles**, over a window after its 2026-08-14 release; the pinned gpt-oss models stay the default everywhere else. M7 is a **pilot** (2 stocks × 2 weeks, one seed); the full run, repeat seeds and debate impact are carried over. Architecture §12, §13, §16 updated (v2.5) | The owner must finish tonight and Groq's daily quota is nearly used. Qwen can't have seen prices after its release, so the look-ahead rule holds ([M7 specs-plan](milestones/M7-evaluation/specs-plan.md) D-M7-9, D-M7-10) |
 | D14 | **M8's live equity chart uses TradingView Lightweight Charts (v5) instead of Recharts.** Architecture §13 updated (v2.6) | The owner chose a trading-grade chart (pan, zoom, crosshair, markers); Apache-2.0, no API key. It only displays numbers the API already computed, so no behaviour changes. M7's backtest charts stay PNGs ([M8 specs-plan](milestones/M8-live-mode/specs-plan.md) D-M8-22) |
+| D15 | **The report page explains each analyst and the debate in plain language, written by the report writer; the report carries the debate's turns.** Live reports only. Architecture Part 9, Part 12 and §7 updated (v2.7) | Part 12 lets the LLM write "the plain-language parts"; this adds three analyst paragraphs and a debate narrative under the same number and ID check. Carrying the turns settles M8's open decision on serving them, with no new endpoint ([M11.1 specs-plan](milestones/M11.1-report-and-order-box/specs-plan.md) D-M11.1-2 to D-M11.1-4) |
+| D16 | **The order box prices the order from the live price the owner sees:** exits follow the entry by keeping the plan's stop and target distances; "buy now" is a market order whose staleness is measured against the seen price; a second mode places a GTC limit-entry bracket. Architecture Part 11, Part 13 and Part 14 updated (v2.7) | Today's exits hang on the last close, so a gap can leave a stop or target on the wrong side of the real fill. Keeping the distances reproduces the ATR rule exactly, and a pending order on Alpaca needs no new moving part (D-M11.1-5) |
+| D17 | **The owner can cancel a pending order.** Architecture Part 14 and §9 updated (v2.7) | §9 says the system never touches a trade after approval. A GTC limit order that never fills would hold cash for ever, so an **unfilled** order can be cancelled; a filled trade is still never touched (D-M11.1-6) |
+| D18 | **Advanced mode:** the owner may edit stop, take-profit and shares; available cash is the only hard limit; the 10% cap and the 1% risk limit become warnings, confirmed and recorded. "Shares can only go down" now describes the **recommendation**. Architecture Part 11 and Part 13 updated (v2.7) | The owner's decision of 2026-10-05: control with a fair warning. A trade can never spend cash the account doesn't have, and every override is recorded and badged (D-M11.1-7) |
 
 ---
 
@@ -229,6 +234,7 @@ The architecture's M0–M9 order is kept. Carrying it out properly needs a few p
 | **M7** | Evaluation and baselines | 16, evaluation section | M | M6 |
 | **M8** | Live mode: API, dashboard, approval, bracket orders, fill check | 13, 14 (Alpaca), live mode | XL | M5 (M6 for the journal) |
 | **M9** | Dashboard polish, README, results write-up | — | M | M7, M8 |
+| **M11.1** | Report explanations, order box, cancel, advanced mode | 9, 11, 12, 13, 14 (D15 to D18) | XL | M8 |
 
 Size is relative effort (S < M < L < XL), not a calendar estimate. Real durations get recorded in each retrospective. Size also sets the document set ([§1.2](#12-per-milestone-documents)): M0, M2, M5, M7 and M9 use `specs-plan.md`; M1, M3, M4, M6 and M8 use separate `specs.md` and `plan.md`.
 
@@ -247,6 +253,8 @@ flowchart LR
   M7 --> M9["M9 Polish and README"]
   M8 --> M9
 ```
+
+M11.1 is the owner's label (there is no M10 or M11); it is built on top of M8 and does not block M9.
 
 M1 and M2 are independent of each other and could be built in either order. M7 and M8 are also independent once M6 is done. By default we still work **sequentially**, one milestone at a time, so the gated review stays manageable.
 
@@ -567,13 +575,19 @@ Each milestone below states the goal, scope, deliverables, **draft acceptance cr
 
 ---
 
+### M11.1 — Report explanations and the order box
+
+**Goal:** After M8 the owner can run the full loop, but the report is hard to read and the order box is rigid. The done-when: *a live report explains each analyst and the debate in plain language; the owner sees the live price, chooses to buy now or at a set price, approves, and a real pending order is visible on Alpaca paper and can be cancelled from the dashboard.* Size XL, one `specs-plan.md` + `task.md` by the owner's instruction. Depends on M8 (the owner started it on branch `m11.1-report-and-order-box`, cut from `m8-live-mode`, before M8's acceptance; the "accepted first" start rule was overridden for this). Specs, plan, tasks and acceptance criteria: [`specs-plan.md`](milestones/M11.1-report-and-order-box/specs-plan.md). Deviations D15 to D18.
+
+---
+
 ### M9 — Dashboard polish, README, results write-up
 
 **Goal:** The architecture's done-when: *"A stranger can understand the system and its results from the repo."*
 
 **In scope**
 
-- Dashboard: fix the issues found while using it after M8 acceptance. No new pages, no themes, no mobile layout: it's a single-user tool on a laptop (C10).
+- Dashboard: fix the issues found while using it after M8 acceptance. No new pages, no themes, no mobile layout: it's a single-user tool on a laptop (C10). The report-page and order-box changes (analyst and debate explanations, live price, limit entry, cancel, advanced mode) moved to M11.1.
 - `README.md`: what it is, the safety statement (paper only, not financial advice), a quick start (uv, `.env`, `bullpit doctor`, first request), an architecture summary with diagrams, how to run a backtest and evaluation, the results table and its limits, project structure, links to the ADRs and milestone docs.
 - The final M7 results, including the owner's live track record so far (the architecture calls this "your cleanest evidence").
 - Clean-up of dead code and TODOs, a dependency audit, and a final secret scan across the git history.
@@ -673,6 +687,7 @@ The journal grows one milestone at a time, and each step is one Alembic migratio
 | M6 | `approvals`, `trades`, `equity_snapshots`, `backtest_runs` ➕ (run config, progress, resume point) |
 | M7 | `backtest_runs.policy`, `backtest_runs.source_run_id` (columns only, migration `0006`) |
 | M8 | Migration `0007_live`: `requests` statuses `awaiting_approval` and `expired`, the lock index on `running` and `awaiting_approval`; `approvals.latest_price` and `.confirmations` (`decided_by` gains `owner`); `trades` order ID, stop-leg ID and take-profit-leg ID columns (`exit_reason` gains `manual`); `equity_snapshots` a partial unique index on `date` for live rows (`run_id` NULL) and nullable `cash` and `positions_value`. LangGraph checkpoint tables live in their own SQLite file, `checkpoints.db`, created by the checkpointer and outside Alembic (D-M8-8) |
+| M11.1 | Migration `0008_order_box`: `approvals` gain `order_type` (default `market`), `entry_price`, `limit_price`, `stop_loss`, `take_profit`, `seen_price` and `overrides` (JSON), so an order can be rebuilt from its approval row; `trades` gain `order_type` (default `market`) and `limit_price`. The report is JSON, so its new optional fields need no migration |
 
 ➕ = not listed in architecture Part 15; added for resumable backtests and evaluation bookkeeping.
 

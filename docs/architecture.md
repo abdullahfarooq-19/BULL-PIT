@@ -21,6 +21,7 @@
 | v2.4 | 2026-09-29 | **D12:** the simulated broker checks stop-loss and take-profit on the entry day too, using that day's low and high, stop first (Part 14). **M6 done-when** (§16): a resumable backtest proven on the pinned models with a real pause and resume; the 26-week run moves to M7 because the free daily quota can't cover it in one day. |
 | v2.5 | 2026-09-30 | **D13:** M7's AI runs use `qwen/qwen3.8-27b:free` on OpenRouter for both roles, over a window after its 2026-08-14 release (§12, §13); the pinned gpt-oss models stay the default. **M7 done-when** (§16): a pilot results table for all four approaches; repeat runs, the full 26-week run and debate impact are carried over. |
 | v2.6 | 2026-09-30 | **D14:** the dashboard's live equity chart uses TradingView Lightweight Charts instead of Recharts (§13). Wording aligned with M8's plan, no behaviour change: the checkpointer's tables live in their own SQLite file (§13), the API lives in `bullpit/api/` (§15), and the trade's exit reason may also be `manual` (Part 15, as §9 already describes). |
+| v2.7 | 2026-10-05 | **M11.1.** **D15:** live reports explain each analyst and the debate in plain language, written by the report writer, and carry the debate's turns (Part 9, Part 12, §7). **D16:** the order box prices the order from the live price the owner sees, exits follow the entry, and the owner may place a GTC limit-entry bracket instead of buying now (Part 11, Part 13, Part 14). **D17:** the owner can cancel a pending order; a filled trade is still never touched (Part 14, §9). **D18:** an opt-in advanced mode lets the owner edit stop, take-profit and shares; available cash is the only hard limit, and the cap and risk limit become recorded warnings (Part 11, Part 13, Part 15). |
 
 Implementation-level decisions that don't change the system's behaviour (deviations D1–D7) are recorded in [`dev-plan.md` §3](dev-plan.md#3-deviations-from-the-architecture-roadmap).
 
@@ -350,7 +351,7 @@ Both must cite evidence IDs, never invent numbers, and address the opponent's st
 
 **Why the conflict helps:** a single LLM tends to lock onto one story (confirmation bias). A forced opposing case brings risks to the surface, and the report shows you both sides.
 
-**Hands over:** the transcript, each side's final conviction, and the points the bull conceded.
+**Hands over:** the transcript, each side's final conviction, and the points the bull conceded. In live mode the report keeps every turn (side, round, claims with their evidence IDs and the unsupported flag, concessions, conviction), so the dashboard can show the debate turn by turn (v2.7, D15).
 
 ### Part 10 — Trader `[LLM]`
 
@@ -406,6 +407,10 @@ This example works because each limit protects against a different danger: the t
 
 **Loss warning:** if equity fell more than 5% in the last 7 days, the report shows a red warning, and approving requires an extra confirmation.
 
+**Exits follow the entry (v2.7, D16).** The table above is anchored to the price the plan was made at. When the owner chooses an entry price (the live price they see, or a limit price they set), code keeps the plan's distances: stop = entry − (plan price − plan stop), take-profit = entry + (plan take-profit − plan price), rounded to the cent. For the same ATR and exit style this is exactly the table's rule.
+
+**The limits describe the recommendation (v2.7, D18).** The four limits above, and "shares can only go down", size and bound what Bull Pit *recommends*. In the dashboard's opt-in **advanced mode** the owner may edit the stop, take-profit and share count. Available cash (never buying power) stays a hard limit; exceeding the 10% cap or the 1% risk limit becomes a warning that the owner must confirm, and every override is recorded.
+
 #### Stage B: LLM review
 
 Runs only if Stage A passes. It looks for things rules can't see, such as a serious bear point the trader ignored, or a size that doesn't match weak confidence. It can approve, shrink, or veto, with a reason. Code makes sure it can only shrink, never enlarge. A veto sends the recommendation back to the trader, at most twice, then the result is "no trade".
@@ -418,6 +423,7 @@ Produces the report you decide from (see [The report](#7-the-report) for the ful
 
 - **Code fills in every number:** prices, signals, share count, dollar amounts, exits, the maximum loss and possible gain, and market context.
 - **The LLM writes only the plain-language parts:** a short summary, the strongest point on each side, and what would change the view. It may only refer to numbers already in the report. A code check rejects any new number it tries to add.
+- **Live reports add explanations (v2.7, D15).** The writer also gives one short paragraph per analyst (what the facts say, why they point to the stated direction, what cuts against it) and, after a debate, a paragraph per round and a conclusion paragraph on how the debate led to the trader's decision. The same number and ID check covers them, and code-written sentences replace any text that fails it. The paragraphs explain code-written facts against the model's stated judgment; they are not its hidden reasoning. Backtest and baseline reports don't get them, so their cost is unchanged.
 - A report is produced for **every** request, including "no trade", so you always see why.
 
 **Hands over:** the report to the approval gate and the journal.
@@ -427,8 +433,8 @@ Produces the report you decide from (see [The report](#7-the-report) for the ful
 **Every buy needs your approval, no matter how small.** Nothing is ever traded automatically.
 
 1. LangGraph's `interrupt()` pauses the graph, and the checkpointer saves its state.
-2. The dashboard shows the report with **Approve** and **Reject** buttons. You may lower the share count first. Raising it is not allowed, and code re-checks the rules on any change.
-3. **Staleness check:** when you click Approve, code fetches the latest price. If it moved more than 2% since the report, you're told and asked to confirm again or re-run the analysis.
+2. The dashboard shows the report with **Approve** and **Reject** buttons and an order box with the live price. You choose to **buy now** (a market order) or **buy at a price you set** (a limit order), and may lower the share count first. Raising it is not allowed, and code re-checks the rules on any change. In the opt-in **advanced mode** you may also edit the stop, take-profit and share count (more shares than recommended included): cash is the only hard limit, the cap and risk limit become warnings you confirm, and each override is recorded (v2.7, D16, D18).
+3. **Staleness check:** when you click Approve to buy now, code fetches the latest price. If it moved more than 2% from the price you saw on screen, you're told and asked to confirm again or re-run the analysis. A limit order skips this check, since the limit protects the price.
 4. **Expiry:** an unanswered report expires after one trading day, because its prices are out of date.
 
 **In backtest mode** no one can be asked, so a fixed rule applies: every "buy" recommendation is approved as sized. That measures the quality of the recommendations themselves.
@@ -444,6 +450,8 @@ Both brokers are classes with the same functions (`get_account`, `get_position`,
 - Confirms the endpoint is `paper-api.alpaca.markets` at startup, and refuses to run otherwise.
 - Places a **bracket order**: a market buy plus a stop-loss and a take-profit. The two exits stay active until one fills, and the broker then cancels the other. Uses whole shares, since advanced order types may not support fractional shares. Check Alpaca's current bracket-order rules while building.
 - Orders placed while the market is closed wait for the next open.
+- **Limit entry (v2.7, D16).** When the owner sets a price, the order is a good-till-cancelled **limit** buy at that price with the same two exit legs. It waits on Alpaca until the price reaches the limit. It has no expiry of its own, and the owner can cancel it.
+- **Cancel (v2.7, D17).** The owner can cancel an order whose entry has not filled. Bull Pit asks Alpaca to cancel it and records what Alpaca then reports. If the entry has already filled, nothing is cancelled.
 - Every order has a unique `client_order_id` built from the request ID, so a retry can't create a duplicate.
 - A **fill-check job** (run on a schedule or when you open the dashboard) reads order status and records entries and exits in the journal. It only records; it never changes a trade.
 
@@ -467,7 +475,7 @@ A database (SQLite locally, or Supabase's free Postgres tier if hosted).
 | `debate_turns` | Every bull and bear turn, with unsupported claims flagged |
 | `recommendations` | Trader output, risk verdicts, vetoes, final sized order |
 | `reports` | The full report as shown to you |
-| `approvals` | Approve or reject, any share changes, timestamps |
+| `approvals` | Approve or reject, any share changes, timestamps; from v2.7 also the order type, entry, limit, stop, take-profit and the list of overrides, so the order can be rebuilt from the row |
 | `trades` | Entry, exit, exit reason (stop, target, manual close, or window end), profit or loss |
 | `equity_snapshots` | Account value over time |
 | `llm_calls` | Model, tokens, latency, cache key for every call |
@@ -491,8 +499,8 @@ The report is what you read before deciding. It is built so you can understand t
 1. **Header:** ticker, company name, report time, and the date of the price data used.
 2. **Recommendation:** buy or no trade, confidence, and one sentence explaining why.
 3. **Suggested order** (buy only): shares, dollar amount, percentage of equity, stop-loss, take-profit, the maximum loss if the stop is hit, and the gain if the target is hit.
-4. **What the analysts found:** the three signals in a table, with their evidence.
-5. **The debate:** the strongest bull point, the strongest bear point, what the bull conceded, and anything left unresolved.
+4. **What the analysts found:** the three signals, each with its direction, confidence, a plain-language paragraph (live reports, v2.7) and its evidence.
+5. **The debate:** the strongest bull point, the strongest bear point, what the bull conceded, and anything left unresolved; in live reports also a paragraph per round, how the debate reached its conclusion, and the full turns (v2.7).
 6. **Risk manager:** which limit set the share count, any shrink or veto and its reason, and any warnings.
 7. **What would change the view:** for example, "a close below $174 invalidates the trend argument."
 8. **Market context:** whether the S&P 500 is above or below its 200-day average, and whether the VIX is high or low, with one line on what that means.
@@ -553,7 +561,7 @@ sequenceDiagram
 
 ## 9. A trade's life
 
-Once you approve, the system never touches the trade again. The broker handles the exits, and the fill-check job only records what happened.
+Once you approve, the system never touches a **filled** trade again. The broker handles the exits, and the fill-check job only records what happened. The one thing you can still do from the dashboard is cancel an order whose entry has not yet filled (a waiting limit order); that is your action, never the system's (v2.7, D17).
 
 ```mermaid
 flowchart TD
@@ -706,6 +714,7 @@ Measured on real runs (M5, 2026-09-29; input + output + reasoning, from `llm_cal
 - **Per-minute pacing.** A full request uses about three minutes of the large model's per-minute allowance, so a request takes a few minutes end to end. That's fine for on-demand use.
 - **Live:** the large model's daily quota is the binding limit. At about 11K large-model tokens per debated request it allows roughly 18 full requests per day, so plan on about 12 to 15 once retries and re-runs are counted. That's plenty for personal use.
 - **Backtest:** 3 stocks × 26 weeks is about 78 requests, or about 860K large-model tokens: roughly 5 days of quota for one full run, fewer where weak signals skip the debate. Moving every role onto the small model doesn't help, because both models have the same daily limit. Develop against recorded fixtures and the response cache, use short windows while debugging, and save full-length runs for results.
+- Live reports (v2.7) add about 2.2 to 2.7K small-model tokens for the analyst paragraphs and the debate narrative (an estimate; M11.1 measures it). The large model, which sets the daily limit, is untouched. Backtests add nothing.
 - Skipping weak debates, caching fundamentals, short JSON outputs, and 150-word debate turns all reduce usage.
 - These are estimates. Measure real token counts early (M2) and re-plan.
 
