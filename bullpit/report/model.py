@@ -50,6 +50,14 @@ class DebateTurnView(BaseModel, frozen=True):
     conviction: float
 
 
+class DebateNarrative(BaseModel, frozen=True):
+    """The debate in plain language (M11.1-FR-4): a paragraph per round, then how it
+    led to the trader's decision."""
+
+    rounds: list[str]
+    conclusion: str
+
+
 class AttemptRow(BaseModel, frozen=True):
     """Section 6: one trader attempt and what the risk manager did with it."""
 
@@ -123,3 +131,4 @@ class Report(BaseModel, frozen=True):
     analyst_summaries: dict[str, str] | None = None  # by analyst; none for a flagged one
     board_score: float | None = None  # the code-computed signals score
     debate_turns: list[DebateTurnView] | None = None
+    debate_narrative: DebateNarrative | None = None

@@ -19,11 +19,12 @@ from bullpit.agents.debate import final_conviction, transcript_lines
 from bullpit.config import Settings
 from bullpit.errors import LLMUnavailable, PromptTooLarge
 from bullpit.llm.gateway import CompletionFn, Role, call_llm, litellm_completion
-from bullpit.llm.schemas import ReportProse, Signal
+from bullpit.llm.schemas import DebateNarrativeReply, ReportProse, Signal
 from bullpit.report.model import (
     AttemptRow,
     ClaimView,
     DataNotes,
+    DebateNarrative,
     DebateSummary,
     DebateTurnView,
     MarketContext,
@@ -41,6 +42,7 @@ from bullpit.state import DebateTurn, RequestState, TradeAttempt
 from bullpit.tools.indicators import sma
 
 _TEMPLATE = "report.md"
+_NARRATIVE_TEMPLATE = "report_debate.md"
 _SAFE_DEFAULT = ReportProse(
     summary="",
     strongest_bull="",
@@ -235,6 +237,7 @@ def build_report(
     market: MarketContext | None,
     models: list[str],
     generated_at: datetime,
+    narrative: DebateNarrative | None = None,
 ) -> Report:
     """The whole report from the final state (M5-FR-1 to FR-3). Quoted M4 text
     is masked against the numbers the code-written report shows (sec11.5)."""
@@ -282,6 +285,7 @@ def build_report(
         analyst_summaries=_summaries(prose, signals) if live else None,
         board_score=state.board.score if live and state.board is not None else None,
         debate_turns=_debate_turns(state) if live and state.debate else None,
+        debate_narrative=narrative if live else None,
     )
     allowed = allowed_numbers(render_markdown(base, for_prompt=True))
     return base.model_copy(
@@ -460,6 +464,114 @@ def _write_prose(
     return fallback, "fallback", [f"report wording written by code: rejected {', '.join(rejected)}"]
 
 
+def _round_case(debate: list[DebateTurn], side: Literal["bull", "bear"], round_: int) -> str:
+    ids = sorted(
+        {
+            evidence_id
+            for turn in debate
+            if turn.side == side and turn.round == round_
+            for point in turn.points
+            if not point.unsupported
+            for evidence_id in point.evidence_ids
+        }
+    )
+    return ", ".join(ids) if ids else "no supported points"
+
+
+def fallback_narrative(
+    report: Report, summary: DebateSummary, state: RequestState, rounds: int
+) -> DebateNarrative:
+    """Sentences built only from values the code-only report already shows, so
+    they pass the number check by construction (M11.1-FR-7)."""
+    conviction = [
+        "not available" if value is None else f"{value:,.2f}"
+        for value in (summary.bull_conviction, summary.bear_conviction)
+    ]
+    last = state.attempts[-1] if state.attempts else None
+    verdict = None if last is None else last.verdict
+    conclusion = (
+        f"The final convictions were bull {conviction[0]} and bear {conviction[1]}. "
+        f"The trader recommended {'a buy' if report.outcome == 'buy' else 'no trade'}."
+    )
+    if verdict is not None:
+        conclusion += f" The risk review's decision: {verdict.decision}."
+    if report.reason:
+        conclusion += f" {report.reason}"
+    return DebateNarrative(
+        rounds=[
+            f"The bull argued from {_round_case(state.debate, 'bull', number)}; "
+            f"the bear answered with {_round_case(state.debate, 'bear', number)}."
+            for number in range(1, rounds + 1)
+        ],
+        conclusion=conclusion,
+    )
+
+
+def _write_narrative(
+    code_only: Report,
+    summary: DebateSummary,
+    state: RequestState,
+    *,
+    settings: Settings,
+    sessions: sessionmaker[Session],
+    completion_fn: CompletionFn,
+) -> tuple[DebateNarrative, list[str]]:
+    """The debate narrative: one small-model call, one retry naming what was
+    rejected, then the code fallback (M11.1-FR-4, FR-7). Also returns the warnings
+    for the data notes."""
+    allowed = allowed_numbers(render_markdown(code_only, for_prompt=True))
+    rounds = settings.debate_rounds
+    fallback = fallback_narrative(code_only, summary, state, rounds)
+    last = state.attempts[-1] if state.attempts else None
+    verdict = None if last is None else last.verdict
+    reasoning = "" if last is None else mask_unknown_numbers(last.recommendation.reasoning, allowed)
+    variables = {
+        "ticker": state.ticker,
+        "decision": "buy" if code_only.outcome == "buy" else "no trade",
+        "reason": code_only.reason,
+        "transcript": _masked_transcript(state.debate, allowed),
+        "bull_conviction": _num(summary.bull_conviction),
+        "bear_conviction": _num(summary.bear_conviction),
+        "reasoning": reasoning,
+        "review": (
+            "not reached"
+            if verdict is None
+            else f"{verdict.decision}, {mask_unknown_numbers(verdict.reason, allowed)}"
+        ),
+        "rounds": rounds,
+        "max_words": settings.report_paragraph_max_words,
+    }
+    registry = set() if state.board is None else set(state.board.evidence)
+    rejected: list[str] = []
+    for _ in ("llm", "retry"):
+        try:
+            result = call_llm(
+                Role.SMALL,
+                _NARRATIVE_TEMPLATE,
+                {**variables, "rejected": rejected},
+                DebateNarrativeReply,
+                safe_default=DebateNarrativeReply(rounds=[], conclusion=""),
+                request_id=state.request_id,
+                settings=settings,
+                sessions=sessions,
+                completion_fn=completion_fn,
+            )
+        except (LLMUnavailable, PromptTooLarge) as exc:
+            return fallback, [f"debate narrative written by code: {exc}"]
+        if result.flagged:
+            return fallback, ["debate narrative written by code: LLM reply invalid"]
+        reply = result.value
+        rejected = [] if len(reply.rounds) == rounds else [f"{len(reply.rounds)} round paragraphs"]
+        for text in [*reply.rounds, reply.conclusion]:
+            rejected += [t for t in check_text(text, allowed, registry) if t not in rejected]
+        if not rejected:
+            limit = settings.report_paragraph_max_words
+            too_long = sum(len(text.split()) > limit for text in [*reply.rounds, reply.conclusion])
+            warnings = [f"{too_long} debate paragraphs are over {limit} words"] if too_long else []
+            return DebateNarrative(rounds=reply.rounds, conclusion=reply.conclusion), warnings
+    return fallback, [f"debate narrative written by code: rejected {', '.join(rejected)}"]
+
+
 def report_node(
     state: RequestState,
     *,
@@ -497,6 +609,18 @@ def report_node(
     prose, source, new_warnings = _write_prose(
         code_only, state, settings=settings, sessions=sessions, completion_fn=completion_fn
     )
+    narrative = None
+    debate = code_only.debate
+    if state.mode == "live" and debate is not None:
+        narrative, narrative_warnings = _write_narrative(
+            code_only,
+            debate,
+            state,
+            settings=settings,
+            sessions=sessions,
+            completion_fn=completion_fn,
+        )
+        new_warnings = [*new_warnings, *narrative_warnings]
     report = build_report(
         state,
         prose=prose,
@@ -504,6 +628,7 @@ def report_node(
         market=market,
         models=models,
         generated_at=generated_at,
+        narrative=narrative,
     )
     if not new_warnings:
         return {"report": report, "warnings": state.warnings}

@@ -1302,6 +1302,28 @@
         "title": "DataNotes",
         "description": "Section 9."
       },
+      "DebateNarrative": {
+        "properties": {
+          "rounds": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Rounds"
+          },
+          "conclusion": {
+            "type": "string",
+            "title": "Conclusion"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rounds",
+          "conclusion"
+        ],
+        "title": "DebateNarrative",
+        "description": "The debate in plain language (M11.1-FR-4): a paragraph per round, then how it\nled to the trader's decision."
+      },
       "DebateSummary": {
         "properties": {
           "strongest_bull": {
@@ -2200,6 +2222,16 @@
               }
             ],
             "title": "Debate Turns"
+          },
+          "debate_narrative": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DebateNarrative"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",

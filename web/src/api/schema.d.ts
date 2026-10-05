@@ -443,6 +443,17 @@ export interface components {
             warnings: string[];
         };
         /**
+         * DebateNarrative
+         * @description The debate in plain language (M11.1-FR-4): a paragraph per round, then how it
+         *     led to the trader's decision.
+         */
+        DebateNarrative: {
+            /** Rounds */
+            rounds: string[];
+            /** Conclusion */
+            conclusion: string;
+        };
+        /**
          * DebateSummary
          * @description Section 5.
          */
@@ -735,6 +746,7 @@ export interface components {
             board_score?: number | null;
             /** Debate Turns */
             debate_turns?: components["schemas"]["DebateTurnView"][] | null;
+            debate_narrative?: components["schemas"]["DebateNarrative"] | null;
         };
         /** RequestDetail */
         RequestDetail: {

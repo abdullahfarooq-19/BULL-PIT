@@ -73,6 +73,13 @@ _DEFAULT_REPORT_REPLY = json.dumps(
         "would_change_view": "A break of the trend.",
     }
 )
+_FIRST_LINE_NARRATIVE = "You are the debate narrator"
+_DEFAULT_NARRATIVE_REPLY = json.dumps(
+    {
+        "rounds": ["The bull pressed the trend and the bear answered with the news."] * 2,
+        "conclusion": "The trader weighed both cases and decided.",
+    }
+)
 
 
 @pytest.fixture
@@ -200,6 +207,8 @@ class RecordingLLM:
             content = self.review_reply
         elif prompt.startswith(_FIRST_LINE_REPORT):
             content = _DEFAULT_REPORT_REPLY
+        elif prompt.startswith(_FIRST_LINE_NARRATIVE):
+            content = _DEFAULT_NARRATIVE_REPLY
         else:
             raise AssertionError(f"unrecognised prompt: {prompt[:80]!r}")
 

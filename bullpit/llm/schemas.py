@@ -106,3 +106,11 @@ class ReportProse(BaseModel):
     technical_summary: str = ""
     fundamentals_summary: str = ""
     sentiment_summary: str = ""
+
+
+class DebateNarrativeReply(BaseModel):
+    """Debate narrative LLM reply (M11.1-FR-4): a paragraph per round, in order,
+    and how the debate led to the trader's decision."""
+
+    rounds: list[str]
+    conclusion: str
