@@ -168,6 +168,16 @@ Quick browser checks while building (the full scripted check is T-18): the order
 
 The scratch scripts stay in the session scratchpad (outside the repo), as the plan says.
 
+### T-17 (a): the real limit order through the dashboard, and its cancel (2026-10-05, market closed, real Alpaca paper account)
+
+Request `20261002-GOOGL-356d51b9` (real GOOGL report, buy, 15 shares, plan reference 343.50, stop 325.49, target 370.51; live price 343.47). The owner chose **Buy at a price**, a limit of **$300.00**, and held to approve.
+
+- **Alpaca (read back with the API):** `bullpit-20261002-GOOGL-356d51b9`, type limit, class bracket, GTC, status `accepted`, qty 15, limit 300, filled 0; take-profit leg limit 327.01 `held`; stop leg stop 281.99 `held`. The legs are the plan's distances (18.01 down, 27.01 up) moved to the limit: 300 - 18.01 = 281.99 and 300 + 27.01 = 327.01.
+- **Journal:** `approvals` row `approved` by `owner`, order type `limit`, entry and limit 300.00, stop 281.99, take-profit 327.01, no overrides, committed before the order; `trades` row `pending`, reference price 300.00, order type `limit`, limit 300.00, with Alpaca's order and leg IDs; request `completed`.
+- **Cancel from the dashboard (owner):** Alpaca then showed the parent and both legs `canceled`, filled 0; the journal row is `cancelled` with reason `cancelled by owner`; a fill check afterwards changed nothing (it leaves a cancelled row alone), no warnings.
+
+**(b) the market order is not done**: it needs a US session (opens 18:30 PKT today) and a second buy report; recorded here as pending, to be run when the owner chooses.
+
 ## Retrospective
 
 (Written in T-20.)
