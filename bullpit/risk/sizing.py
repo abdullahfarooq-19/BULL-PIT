@@ -85,6 +85,26 @@ def share_limits(
     }
 
 
+def reprice(order: SizedOrder, entry: Decimal) -> SizedOrder | None:
+    """The order with its exits moved to a new entry price, keeping the plan's
+    stop and target distances (M11.1-FR-12, D16). `None` if the stop would be at
+    or below zero. `limit` and `limit_shares` stay as the plan's record."""
+    stop = round_cent(entry - (order.reference_price - order.stop_loss))
+    target = round_cent(entry + (order.take_profit - order.reference_price))
+    if stop <= 0:
+        return None
+    return build_order(
+        order.ticker,
+        order.shares,
+        reference=entry,
+        stop=stop,
+        take_profit=target,
+        exit_style=order.exit_style,
+        limit=order.limit,
+        limit_shares=order.limit_shares,
+    )
+
+
 def build_order(
     ticker: str,
     shares: int,
