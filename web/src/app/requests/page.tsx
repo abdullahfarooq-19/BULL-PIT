@@ -4,7 +4,7 @@ import Link from "next/link";
 
 import { api, unwrap } from "@/api/client";
 import { EmptyPanel, ErrorPanel, LoadingPanel, PageHeader } from "@/components/states";
-import { ExpiryChip, StatusDot } from "@/components/status";
+import { ExpiryChip, OrderBadges, StatusDot } from "@/components/status";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { dateTime } from "@/lib/format";
 import { useLoad } from "@/lib/use-load";
@@ -48,7 +48,10 @@ export default function HistoryPage() {
                   <StatusDot status={r.status} />
                 </TableCell>
                 <TableCell className="capitalize">{r.outcome?.replace("_", " ") ?? "—"}</TableCell>
-                <TableCell className="capitalize">{r.decision ?? "—"}</TableCell>
+                <TableCell>
+                  <span className="mr-2 capitalize">{r.decision ?? "—"}</span>
+                  <OrderBadges orderType={r.order_type} overrides={r.overrides} />
+                </TableCell>
                 <TableCell className="text-right">{r.expires_at && <ExpiryChip expiresAt={r.expires_at} />}</TableCell>
               </TableRow>
             ))}

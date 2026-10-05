@@ -4,10 +4,11 @@ import { Loader2, RefreshCw } from "lucide-react";
 import Link from "next/link";
 
 import { api, unwrap } from "@/api/client";
+import { CancelOrderButton } from "@/components/cancel-order";
 import { EquityChart } from "@/components/equity-chart";
 import { useFillCheck } from "@/components/fill-check";
 import { EmptyPanel, ErrorPanel, LoadingPanel, PageHeader } from "@/components/states";
-import { StatusDot } from "@/components/status";
+import { OrderBadges, StatusDot } from "@/components/status";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { money } from "@/lib/format";
@@ -51,6 +52,9 @@ export default function TradesPage() {
                   <TableHead className="text-right">Exit</TableHead>
                   <TableHead>Reason</TableHead>
                   <TableHead className="text-right">P&amp;L</TableHead>
+                  <TableHead className="text-right">
+                    <span className="sr-only">Actions</span>
+                  </TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -63,10 +67,17 @@ export default function TradesPage() {
                     </TableCell>
                     <TableCell>
                       <StatusDot status={t.status} />
+                      <span className="ml-2">
+                        <OrderBadges orderType={t.order_type} overrides={t.overrides ?? []} />
+                      </span>
                     </TableCell>
                     <TableCell className="num text-right">{t.shares}</TableCell>
                     <TableCell className="num text-right">
-                      {t.entry_price ? `${money(t.entry_price)} ${t.entry_date}` : "—"}
+                      {t.entry_price
+                        ? `${money(t.entry_price)} ${t.entry_date}`
+                        : t.status === "pending" && t.order_type === "limit" && t.limit_price
+                          ? `waiting at ${money(t.limit_price)}`
+                          : "—"}
                     </TableCell>
                     <TableCell className="num text-right">
                       {t.exit_price ? `${money(t.exit_price)} ${t.exit_date}` : "—"}
@@ -76,6 +87,17 @@ export default function TradesPage() {
                       className={`num text-right ${t.pnl ? (Number(t.pnl) >= 0 ? "text-bull" : "text-bear") : ""}`}
                     >
                       {t.pnl ? money(t.pnl) : "—"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {t.status === "pending" && (
+                        <CancelOrderButton
+                          requestId={t.request_id}
+                          onDone={() => {
+                            trades.reload();
+                            equity.reload();
+                          }}
+                        />
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

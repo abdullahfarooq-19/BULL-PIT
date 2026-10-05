@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { api, ApiError, startRequest, unwrap } from "@/api/client";
 import type { OrderPreviewBody, Report, RequestDetail } from "@/api/client";
+import { CancelOrderButton } from "@/components/cancel-order";
 import { BracketLadder } from "@/components/report/bracket-ladder";
 import { HoldButton } from "@/components/report/hold-button";
 import { StatusDot, ExpiryChip } from "@/components/status";
@@ -74,7 +75,6 @@ export function OrderPanel({
   const [refusal, setRefusal] = useState<Refusal>();
   const [failure, setFailure] = useState<string>();
   const [busy, setBusy] = useState(false);
-  const [cancelling, setCancelling] = useState(false);
 
   const limitOk = Number(limitText) > 0;
   const body: OrderPreviewBody | null =
@@ -204,19 +204,6 @@ export function OrderPanel({
       toast.error(error instanceof Error ? error.message : "Could not re-run the request.");
       onChanged();
     }
-  };
-
-  const cancelOrder = async () => {
-    setCancelling(false);
-    try {
-      await unwrap(
-        api.POST("/trades/{request_id}/cancel", { params: { path: { request_id: detail.id } } }),
-      );
-      toast.success("Order cancelled");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Could not cancel the order.");
-    }
-    onChanged();
   };
 
   const sharesLabel = `${shares} ${shares === 1 ? "share" : "shares"}`;
@@ -431,25 +418,7 @@ export function OrderPanel({
         </div>
       )}
 
-      {!waiting && <Outcome detail={detail} onCancel={() => setCancelling(true)} />}
-
-      <Dialog open={cancelling} onOpenChange={setCancelling}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Cancel this order?</DialogTitle>
-            <DialogDescription>
-              Alpaca stops waiting for the price and the order is cancelled. If it has just filled, nothing is
-              cancelled and the trade is shown as filled.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCancelling(false)}>
-              Keep it
-            </Button>
-            <Button onClick={() => void cancelOrder()}>Cancel the order</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {!waiting && <Outcome detail={detail} onChanged={onChanged} />}
 
       <Dialog open={refusal !== undefined} onOpenChange={(open) => !open && setRefusal(undefined)}>
         <DialogContent>
@@ -606,7 +575,7 @@ function refusalTitle(code?: string): string {
 }
 
 /** What happened to a report that is no longer waiting. A pending order can be cancelled. */
-function Outcome({ detail, onCancel }: { detail: RequestDetail; onCancel: () => void }) {
+function Outcome({ detail, onChanged }: { detail: RequestDetail; onChanged: () => void }) {
   const { approval, trade } = detail;
   if (approval) {
     const limit = trade?.order_type === "limit" || approval.order_type === "limit";
@@ -635,9 +604,7 @@ function Outcome({ detail, onCancel }: { detail: RequestDetail; onCancel: () => 
           </div>
         )}
         {trade?.status === "pending" && (
-          <Button variant="outline" className="w-full" onClick={onCancel}>
-            Cancel order
-          </Button>
+          <CancelOrderButton requestId={detail.id} onDone={onChanged} className="w-full" />
         )}
       </div>
     );

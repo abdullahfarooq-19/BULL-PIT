@@ -54,3 +54,23 @@ export function ExpiryChip({ expiresAt }: { expiresAt: string }) {
     </span>
   );
 }
+
+/** The order type of an approved order, and an "Override" badge when the owner stepped
+ *  outside the plan's rules (M11.1-FR-19). */
+export function OrderBadges({ orderType, overrides }: { orderType?: string | null; overrides: string[] }) {
+  return (
+    <>
+      {orderType === "limit" && (
+        <span className="rounded border border-line px-1.5 py-0.5 text-xs text-muted-foreground">Limit</span>
+      )}
+      {overrides.length > 0 && (
+        <span
+          title={overrides.join(", ").replaceAll("_", " ")}
+          className="rounded border border-bear/50 px-1.5 py-0.5 text-xs text-bear"
+        >
+          Override
+        </span>
+      )}
+    </>
+  );
+}
