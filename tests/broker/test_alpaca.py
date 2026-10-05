@@ -2,7 +2,8 @@
 order-to-trade mapping (M8-FR-1, FR-2, FR-3; M8-AC-5c, AC-7).
 
 Order shapes are recorded Alpaca responses in tests/fixtures/alpaca/ (M8-T-3);
-the filled, cancelled and partial ones are derived from them (see task.md).
+the filled, cancelled and partial ones are derived from them (see task.md). The
+limit-entry shapes are M11.1-T-3's real orders (ADR-0008), plus two derived below.
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ import pytest
 from alpaca.common.exceptions import APIError
 from alpaca.trading.enums import OrderClass, OrderSide, TimeInForce
 from alpaca.trading.models import Order
-from alpaca.trading.requests import MarketOrderRequest
+from alpaca.trading.requests import LimitOrderRequest, MarketOrderRequest
 from requests import ConnectionError as RequestsConnectionError
 from requests import Timeout
 
@@ -36,8 +37,36 @@ def _load(name: str) -> Any:
     return json.loads((FIXTURES / f"{name}.json").read_text(encoding="utf-8"))
 
 
+def _limit_filled() -> dict[str, Any]:
+    """`order_limit_pending` with the entry filled at 9.65 (derived: `status`,
+    `filled_qty`, `filled_avg_price`, `filled_at`; the legs arm: take-profit `new`,
+    stop `held`)."""
+    order: dict[str, Any] = _load("order_limit_pending")
+    order.update(
+        status="filled", filled_qty="1", filled_avg_price="9.65", filled_at="2026-10-06T14:31:00Z"
+    )
+    order["legs"][0]["status"] = "new"
+    return order
+
+
+def _limit_stopped() -> dict[str, Any]:
+    """`_limit_filled` with the stop leg filled at 9.30 on 2026-10-07 (derived: stop
+    leg `status`, `filled_qty`, `filled_avg_price`, `filled_at`; take-profit
+    `canceled` with `canceled_at`)."""
+    order = _limit_filled()
+    take_profit, stop = order["legs"]
+    take_profit.update(status="canceled", canceled_at="2026-10-07T15:00:00Z")
+    stop.update(
+        status="filled", filled_qty="1", filled_avg_price="9.30", filled_at="2026-10-07T15:00:00Z"
+    )
+    return order
+
+
+_DERIVED = {"order_limit_filled": _limit_filled, "order_limit_stopped": _limit_stopped}
+
+
 def _order(name: str) -> Order:
-    return Order.model_validate(_load(name))
+    return Order.model_validate(_DERIVED[name]() if name in _DERIVED else _load(name))
 
 
 def _api_error(message: str, status_code: int) -> APIError:
@@ -79,9 +108,9 @@ class FakeTradingClient:
     ) -> None:
         self._submit = submit
         self._lookup = lookup
-        self.requests: list[MarketOrderRequest] = []
+        self.requests: list[MarketOrderRequest | LimitOrderRequest] = []
 
-    def submit_order(self, request: MarketOrderRequest) -> Order:
+    def submit_order(self, request: MarketOrderRequest | LimitOrderRequest) -> Order:
         self.requests.append(request)
         if isinstance(self._submit, Exception):
             raise self._submit
@@ -121,6 +150,72 @@ def test_bracket_request_shape() -> None:
     assert trade.status == "pending"
     assert trade.reference_price == REFERENCE
     assert trade.order_id and trade.stop_order_id and trade.take_profit_order_id
+
+
+def test_limit_bracket_request_shape() -> None:
+    client = FakeTradingClient(submit=_order("order_limit_pending"))
+    plan = _sized_order().model_copy(
+        update={"stop_loss": Decimal("9.30"), "take_profit": Decimal("10.27")}
+    )
+
+    trade = _broker(client).submit_bracket_order(
+        plan,
+        client_order_id=CLIENT_ORDER_ID,
+        submitted_on=SUBMITTED_ON,
+        limit_price=Decimal("9.69"),
+    )
+
+    (request,) = client.requests
+    assert isinstance(request, LimitOrderRequest)
+    assert request.limit_price == 9.69
+    assert (request.symbol, request.qty, request.side) == ("F", 1, OrderSide.BUY)
+    assert request.time_in_force == TimeInForce.GTC
+    assert request.order_class == OrderClass.BRACKET
+    assert request.client_order_id == CLIENT_ORDER_ID
+    assert request.take_profit is not None and request.take_profit.limit_price == 10.27
+    assert request.stop_loss is not None and request.stop_loss.stop_price == 9.30
+    assert (trade.status, trade.order_type, trade.limit_price) == (
+        "pending",
+        "limit",
+        Decimal("9.69"),
+    )
+
+
+def test_a_market_bracket_is_a_market_trade() -> None:
+    trade = _submit(_broker(FakeTradingClient(submit=_order("order_pending"))))
+
+    assert (trade.order_type, trade.limit_price) == ("market", None)
+
+
+class FakeCancelClient:
+    def __init__(self, failure: Exception | None = None) -> None:
+        self._failure = failure
+        self.cancelled: list[str] = []
+
+    def cancel_order_by_id(self, order_id: str) -> None:
+        if self._failure is not None:
+            raise self._failure
+        self.cancelled.append(order_id)
+
+
+class TestCancelOrder:
+    def test_asks_alpaca_to_cancel_the_order(self) -> None:
+        client = FakeCancelClient()
+
+        _broker(client).cancel_order("order-1")  # type: ignore[arg-type]
+
+        assert client.cancelled == ["order-1"]
+
+    @pytest.mark.parametrize(
+        "failure",
+        [
+            pytest.param(_recorded_error("error_order_not_found"), id="not-found"),
+            pytest.param(Timeout("timed out"), id="timeout"),
+        ],
+    )
+    def test_any_error_is_a_rejection(self, failure: Exception) -> None:
+        with pytest.raises(BrokerRejected, match="cancel_order"):
+            _broker(FakeCancelClient(failure)).cancel_order("order-1")  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
@@ -208,6 +303,38 @@ def _at(text: str) -> datetime:
         ),
         pytest.param("order_legs_cancelled", "open", False, False, {}, id="legs-cancelled"),
         pytest.param("order_partial", "pending", True, True, {}, id="partial"),
+        pytest.param(
+            "order_limit_pending",
+            "pending",
+            True,
+            False,
+            {"order_type": "limit", "limit_price": Decimal("9.69")},
+            id="limit-pending",
+        ),
+        pytest.param(
+            "order_limit_cancelled",
+            "cancelled",
+            False,
+            False,
+            {"cancel_reason": "entry canceled", "order_type": "limit"},
+            id="limit-cancelled",
+        ),
+        pytest.param(
+            "order_limit_filled",
+            "open",
+            True,
+            False,
+            {"entry_price": Decimal("9.65"), "entry_date": date(2026, 10, 6)},
+            id="limit-filled",
+        ),
+        pytest.param(
+            "order_limit_stopped",
+            "closed",
+            False,
+            False,
+            {"exit_reason": "stop", "exit_price": Decimal("9.30")},
+            id="limit-stopped",
+        ),
     ],
 )
 def test_live_order_mapping(

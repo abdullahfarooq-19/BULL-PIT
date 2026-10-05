@@ -48,13 +48,19 @@ class FakeOrderBroker(FakeBroker):
     live_orders: dict[str, LiveOrder] = field(default_factory=dict)
     sell_fills: list[tuple[datetime, date, Decimal]] = field(default_factory=list)
     history: list[tuple[date, Decimal]] = field(default_factory=list)
+    cancelled: list[str] = field(default_factory=list)
 
     @property
     def submitted(self) -> list[Trade]:
         return list(self.orders.values())
 
     def submit_bracket_order(
-        self, order: SizedOrder, *, client_order_id: str, submitted_on: date
+        self,
+        order: SizedOrder,
+        *,
+        client_order_id: str,
+        submitted_on: date,
+        limit_price: Decimal | None = None,
     ) -> Trade:
         if client_order_id not in self.orders:
             self.orders[client_order_id] = Trade(
@@ -69,8 +75,20 @@ class FakeOrderBroker(FakeBroker):
                 order_id=f"order-{client_order_id}",
                 stop_order_id=f"stop-{client_order_id}",
                 take_profit_order_id=f"target-{client_order_id}",
+                order_type="market" if limit_price is None else "limit",
+                limit_price=limit_price,
             )
         return self.orders[client_order_id]
+
+    def cancel_order(self, order_id: str) -> None:
+        """Like Alpaca, a no-op for an order that is no longer waiting: a test
+        scripts a fill in `live_orders` before the cancel to make them cross."""
+        self.cancelled.append(order_id)
+        for client_order_id, trade in self.orders.items():
+            if trade.order_id == order_id and trade.status == "pending":
+                self.orders[client_order_id] = trade.model_copy(
+                    update={"status": "cancelled", "cancel_reason": "entry canceled"}
+                )
 
     def find_order(
         self, client_order_id: str, *, submitted_on: date, reference_price: Decimal
@@ -80,7 +98,7 @@ class FakeOrderBroker(FakeBroker):
         if client_order_id in self.orders:
             return LiveOrder(
                 trade=self.orders[client_order_id],
-                exits_active=True,
+                exits_active=self.orders[client_order_id].status != "cancelled",
                 exits_cancelled_at=None,
                 partial=False,
             )

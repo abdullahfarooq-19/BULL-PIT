@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
 from decimal import Decimal
-from typing import cast
+from typing import Any, cast
 
 from alpaca.common.exceptions import APIError
 from alpaca.trading.client import TradingClient
@@ -34,6 +34,7 @@ from alpaca.trading.models import Position as AlpacaPosition
 from alpaca.trading.requests import (
     GetOrdersRequest,
     GetPortfolioHistoryRequest,
+    LimitOrderRequest,
     MarketOrderRequest,
     StopLossRequest,
     TakeProfitRequest,
@@ -45,6 +46,7 @@ from bullpit.broker.clients import make_trading_client
 from bullpit.config import Settings
 from bullpit.data.calendar import NEW_YORK
 from bullpit.domain import Account, Asset, Position, SizedOrder, Trade
+from bullpit.domain import OrderType as EntryType
 from bullpit.errors import BrokerRejected
 from bullpit.risk.sizing import round_cent
 
@@ -98,6 +100,7 @@ def live_order(order: AlpacaOrder, *, submitted_on: date, reference_price: Decim
         raise BrokerRejected(f"order {order.client_order_id} has no stop and take-profit legs")
 
     filled_qty = _filled(order)
+    entry_type: EntryType = "limit" if order.type == OrderType.LIMIT else "market"
     trade = Trade(
         client_order_id=order.client_order_id,
         ticker=order.symbol,
@@ -110,6 +113,8 @@ def live_order(order: AlpacaOrder, *, submitted_on: date, reference_price: Decim
         order_id=str(order.id),
         stop_order_id=str(stop_leg.id),
         take_profit_order_id=str(take_profit_leg.id),
+        order_type=entry_type,
+        limit_price=_price(order.limit_price) if entry_type == "limit" else None,
     )
 
     if order.status in _ENTRY_NOT_FILLED and filled_qty == 0:
@@ -187,21 +192,33 @@ class AlpacaBroker:
         )
 
     def submit_bracket_order(
-        self, order: SizedOrder, *, client_order_id: str, submitted_on: date
+        self,
+        order: SizedOrder,
+        *,
+        client_order_id: str,
+        submitted_on: date,
+        limit_price: Decimal | None = None,
     ) -> Trade:
-        """One market buy of `order.shares` whole shares with its stop-loss and
-        take-profit legs, GTC (ADR-0002). Idempotent (M8-FR-2): a duplicate ID, or
-        a failure that leaves it unknown whether Alpaca took the order, looks the
-        order up by `client_order_id`; only a missing order is a rejection."""
-        request = MarketOrderRequest(
-            symbol=order.ticker,
-            qty=order.shares,
-            side=OrderSide.BUY,
-            time_in_force=TimeInForce.GTC,
-            order_class=OrderClass.BRACKET,
-            client_order_id=client_order_id,
-            take_profit=TakeProfitRequest(limit_price=float(order.take_profit)),
-            stop_loss=StopLossRequest(stop_price=float(order.stop_loss)),
+        """One buy of `order.shares` whole shares with its stop-loss and
+        take-profit legs, GTC (ADR-0002): a market entry, or with `limit_price` a
+        limit entry that waits for that price (ADR-0008). Idempotent (M8-FR-2): a
+        duplicate ID, or a failure that leaves it unknown whether Alpaca took the
+        order, looks the order up by `client_order_id`; only a missing order is a
+        rejection."""
+        legs: dict[str, Any] = {
+            "symbol": order.ticker,
+            "qty": order.shares,
+            "side": OrderSide.BUY,
+            "time_in_force": TimeInForce.GTC,
+            "order_class": OrderClass.BRACKET,
+            "client_order_id": client_order_id,
+            "take_profit": TakeProfitRequest(limit_price=float(order.take_profit)),
+            "stop_loss": StopLossRequest(stop_price=float(order.stop_loss)),
+        }
+        request = (
+            MarketOrderRequest(**legs)
+            if limit_price is None
+            else LimitOrderRequest(limit_price=float(limit_price), **legs)
         )
         try:
             placed = cast(AlpacaOrder, self.client.submit_order(request))
@@ -217,6 +234,16 @@ class AlpacaBroker:
         return live_order(
             placed, submitted_on=submitted_on, reference_price=order.reference_price
         ).trade
+
+    def cancel_order(self, order_id: str) -> None:
+        """Asks Alpaca to cancel an order and its legs. Alpaca answers without an
+        error for an order that is already filled or cancelled (checked 2026-10-05,
+        ADR-0008), so the caller re-reads the order to learn what happened. An
+        unknown order is a 404."""
+        try:
+            self.client.cancel_order_by_id(order_id)
+        except (APIError, RequestException) as exc:
+            raise BrokerRejected(f"cancel_order({order_id}) failed: {exc}") from exc
 
     def find_order(
         self, client_order_id: str, *, submitted_on: date, reference_price: Decimal
