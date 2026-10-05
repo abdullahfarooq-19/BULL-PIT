@@ -22,6 +22,8 @@
 | v2.5 | 2026-09-30 | **D13:** M7's AI runs use `qwen/qwen3.8-27b:free` on OpenRouter for both roles, over a window after its 2026-08-14 release (§12, §13); the pinned gpt-oss models stay the default. **M7 done-when** (§16): a pilot results table for all four approaches; repeat runs, the full 26-week run and debate impact are carried over. |
 | v2.6 | 2026-09-30 | **D14:** the dashboard's live equity chart uses TradingView Lightweight Charts instead of Recharts (§13). Wording aligned with M8's plan, no behaviour change: the checkpointer's tables live in their own SQLite file (§13), the API lives in `bullpit/api/` (§15), and the trade's exit reason may also be `manual` (Part 15, as §9 already describes). |
 | v2.7 | 2026-10-05 | **M11.1.** **D15:** live reports explain each analyst and the debate in plain language, written by the report writer, and carry the debate's turns (Part 9, Part 12, §7). **D16:** the order box prices the order from the live price the owner sees, exits follow the entry, and the owner may place a GTC limit-entry bracket instead of buying now (Part 11, Part 13, Part 14). **D17:** the owner can cancel a pending order; a filled trade is still never touched (Part 14, §9). **D18:** an opt-in advanced mode lets the owner edit stop, take-profit and shares; available cash is the only hard limit, and the cap and risk limit become recorded warnings (Part 11, Part 13, Part 15). |
+| v2.8 | 2026-10-06 | **M11.2.** **D19:** the dashboard is Account & Wallet, Trades History (one row per analysis, from "analysing" to "closed"), Portfolio and Backtests; the analysis page links back to Trades History (Part 13, §15). **D20:** the home page shows the broker account's live balance and a watchlist of S&P 100 names with likes; likes live in the journal table `liked_stocks` (Part 15). No change to the graph, the sizing, the approval rules or the orders. |
+| v2.9 | 2026-10-06 | **D21:** the dashboard has three pages (Account & Wallet, Trades History, Portfolio); the Backtests page and its read-only endpoints are removed, and backtest results are read from `docs/results/results.md` (Part 13, §13). No change to backtests, evaluation or the journal. |
 
 Implementation-level decisions that don't change the system's behaviour (deviations D1–D7) are recorded in [`dev-plan.md` §3](dev-plan.md#3-deviations-from-the-architecture-roadmap).
 
@@ -441,6 +443,8 @@ Produces the report you decide from (see [The report](#7-the-report) for the ful
 
 **Hands over:** an approved order to the broker, or a rejection to the journal.
 
+**The dashboard (v2.8, D19, D20).** *Account & Wallet* shows the broker, a Demo badge (always Demo: the paper-only guard), the account's equity from Alpaca (refreshed every 5 seconds while the tab is visible), the ticker box, the owner's liked stocks and an S&P 100 watchlist of names. *Trades History* lists every live request, one row each, with a single status that runs from analysing through decision pending to open and closed; a row opens its stored analysis. *Backtests* have no page (v2.9, D21): their results are `docs/results/results.md`. *Portfolio* shows the equity chart, realised statistics (approved, rejected, ongoing, closed, total profit, total loss, net P&L) and a description of Bull Pit with a disclaimer.
+
 ### Part 14 — Execution: broker adapter `[Code]`
 
 Both brokers are classes with the same functions (`get_account`, `get_position`, `submit_bracket_order`, `get_order`), so the graph never knows which one it is using.
@@ -478,6 +482,7 @@ A database (SQLite locally, or Supabase's free Postgres tier if hosted).
 | `approvals` | Approve or reject, any share changes, timestamps; from v2.7 also the order type, entry, limit, stop, take-profit and the list of overrides, so the order can be rebuilt from the row |
 | `trades` | Entry, exit, exit reason (stop, target, manual close, or window end), profit or loss |
 | `equity_snapshots` | Account value over time |
+| `liked_stocks` | Stocks the owner saved from the watchlist (v2.8, D20) |
 | `llm_calls` | Model, tokens, latency, cache key for every call |
 
 **Hands over:** a complete history for the dashboard and the evaluation.
@@ -679,7 +684,7 @@ Everything is free. Nothing needs a GPU, so it runs on an 8 GB RAM laptop.
 | Data cache | Parquet (pyarrow) | Fast, repeatable runs |
 | Database | SQLite locally; Supabase Postgres (free) if hosted | Journal, and LangGraph checkpoints in their own SQLite file |
 | Backend API | FastAPI | Start requests, serve reports, receive approvals |
-| Dashboard | Next.js with TradingView Lightweight Charts | Pick a stock, read reports, approve, view trades and results |
+| Dashboard | Next.js with TradingView Lightweight Charts | Pick a stock, read reports, approve, view trades and the equity chart. Backtest results are the Markdown file `docs/results/results.md` (v2.9) |
 | Tracing | Langfuse (free tier or self-hosted) | See every agent call and its tokens |
 | Testing | pytest | Date guard, indicators, sizing, rules, simulated exits |
 | CI | GitHub Actions | Runs tests on every push |
@@ -741,7 +746,7 @@ bull-pit/
 │   ├── journal/             database models and queries
 │   ├── eval/                metrics, baselines, results report
 │   ├── runners/             request (live), backtest, fill_check
-│   └── api/                 FastAPI app
+│   └── api/                 FastAPI app (history, account, portfolio, watchlist, requests)
 ├── web/                     Next.js dashboard
 ├── tests/                   guard, indicators, sizing, rules, sim exits
 ├── data_cache/              Parquet files (git-ignored)

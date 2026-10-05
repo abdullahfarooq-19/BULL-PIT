@@ -240,6 +240,15 @@ class EquitySnapshot(Base):
     equity: Mapped[str]
 
 
+class LikedStock(Base):
+    """A watchlist stock the owner saved (M11.2-FR-8); `created_at` is naive UTC."""
+
+    __tablename__ = "liked_stocks"
+
+    symbol: Mapped[str] = mapped_column(primary_key=True)
+    created_at: Mapped[datetime]
+
+
 def _decimal(value: str | None) -> Decimal | None:
     return None if value is None else Decimal(value)
 

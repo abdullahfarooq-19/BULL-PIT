@@ -1,0 +1,398 @@
+{
+ "as_of": "2026-10-06",
+ "note": "Large US companies in the S&P 100, from memory and checked for tradability and SEC filings (M11.2-AC-11). A convenience list, not a recommendation; membership changes over time.",
+ "stocks": [
+  {
+   "symbol": "AAPL",
+   "name": "Apple Inc."
+  },
+  {
+   "symbol": "ABBV",
+   "name": "AbbVie Inc."
+  },
+  {
+   "symbol": "ABT",
+   "name": "Abbott Laboratories"
+  },
+  {
+   "symbol": "ACN",
+   "name": "Accenture plc"
+  },
+  {
+   "symbol": "ADBE",
+   "name": "Adobe Inc."
+  },
+  {
+   "symbol": "AIG",
+   "name": "American International Group"
+  },
+  {
+   "symbol": "AMD",
+   "name": "Advanced Micro Devices"
+  },
+  {
+   "symbol": "AMGN",
+   "name": "Amgen Inc."
+  },
+  {
+   "symbol": "AMT",
+   "name": "American Tower Corporation"
+  },
+  {
+   "symbol": "AMZN",
+   "name": "Amazon.com Inc."
+  },
+  {
+   "symbol": "AVGO",
+   "name": "Broadcom Inc."
+  },
+  {
+   "symbol": "AXP",
+   "name": "American Express Company"
+  },
+  {
+   "symbol": "BA",
+   "name": "The Boeing Company"
+  },
+  {
+   "symbol": "BAC",
+   "name": "Bank of America Corporation"
+  },
+  {
+   "symbol": "BKNG",
+   "name": "Booking Holdings Inc."
+  },
+  {
+   "symbol": "BLK",
+   "name": "BlackRock Inc."
+  },
+  {
+   "symbol": "BMY",
+   "name": "Bristol-Myers Squibb"
+  },
+  {
+   "symbol": "BRK.B",
+   "name": "Berkshire Hathaway Inc."
+  },
+  {
+   "symbol": "C",
+   "name": "Citigroup Inc."
+  },
+  {
+   "symbol": "CAT",
+   "name": "Caterpillar Inc."
+  },
+  {
+   "symbol": "CHTR",
+   "name": "Charter Communications"
+  },
+  {
+   "symbol": "CL",
+   "name": "Colgate-Palmolive Company"
+  },
+  {
+   "symbol": "CMCSA",
+   "name": "Comcast Corporation"
+  },
+  {
+   "symbol": "COF",
+   "name": "Capital One Financial"
+  },
+  {
+   "symbol": "COP",
+   "name": "ConocoPhillips"
+  },
+  {
+   "symbol": "COST",
+   "name": "Costco Wholesale Corporation"
+  },
+  {
+   "symbol": "CRM",
+   "name": "Salesforce Inc."
+  },
+  {
+   "symbol": "CSCO",
+   "name": "Cisco Systems Inc."
+  },
+  {
+   "symbol": "CVS",
+   "name": "CVS Health Corporation"
+  },
+  {
+   "symbol": "CVX",
+   "name": "Chevron Corporation"
+  },
+  {
+   "symbol": "DHR",
+   "name": "Danaher Corporation"
+  },
+  {
+   "symbol": "DIS",
+   "name": "The Walt Disney Company"
+  },
+  {
+   "symbol": "DUK",
+   "name": "Duke Energy Corporation"
+  },
+  {
+   "symbol": "EMR",
+   "name": "Emerson Electric Co."
+  },
+  {
+   "symbol": "F",
+   "name": "Ford Motor Company"
+  },
+  {
+   "symbol": "FDX",
+   "name": "FedEx Corporation"
+  },
+  {
+   "symbol": "GD",
+   "name": "General Dynamics"
+  },
+  {
+   "symbol": "GE",
+   "name": "GE Aerospace"
+  },
+  {
+   "symbol": "GILD",
+   "name": "Gilead Sciences"
+  },
+  {
+   "symbol": "GM",
+   "name": "General Motors Company"
+  },
+  {
+   "symbol": "GOOGL",
+   "name": "Alphabet Inc."
+  },
+  {
+   "symbol": "GS",
+   "name": "The Goldman Sachs Group"
+  },
+  {
+   "symbol": "HD",
+   "name": "The Home Depot"
+  },
+  {
+   "symbol": "HON",
+   "name": "Honeywell International"
+  },
+  {
+   "symbol": "IBM",
+   "name": "International Business Machines"
+  },
+  {
+   "symbol": "INTC",
+   "name": "Intel Corporation"
+  },
+  {
+   "symbol": "INTU",
+   "name": "Intuit Inc."
+  },
+  {
+   "symbol": "JNJ",
+   "name": "Johnson & Johnson"
+  },
+  {
+   "symbol": "JPM",
+   "name": "JPMorgan Chase & Co."
+  },
+  {
+   "symbol": "KO",
+   "name": "The Coca-Cola Company"
+  },
+  {
+   "symbol": "LIN",
+   "name": "Linde plc"
+  },
+  {
+   "symbol": "LLY",
+   "name": "Eli Lilly and Company"
+  },
+  {
+   "symbol": "LMT",
+   "name": "Lockheed Martin"
+  },
+  {
+   "symbol": "LOW",
+   "name": "Lowe's Companies"
+  },
+  {
+   "symbol": "MA",
+   "name": "Mastercard Incorporated"
+  },
+  {
+   "symbol": "MCD",
+   "name": "McDonald's Corporation"
+  },
+  {
+   "symbol": "MDLZ",
+   "name": "Mondelez International"
+  },
+  {
+   "symbol": "MDT",
+   "name": "Medtronic plc"
+  },
+  {
+   "symbol": "MET",
+   "name": "MetLife Inc."
+  },
+  {
+   "symbol": "META",
+   "name": "Meta Platforms Inc."
+  },
+  {
+   "symbol": "MMM",
+   "name": "3M Company"
+  },
+  {
+   "symbol": "MO",
+   "name": "Altria Group"
+  },
+  {
+   "symbol": "MRK",
+   "name": "Merck & Co."
+  },
+  {
+   "symbol": "MS",
+   "name": "Morgan Stanley"
+  },
+  {
+   "symbol": "MSFT",
+   "name": "Microsoft Corporation"
+  },
+  {
+   "symbol": "NEE",
+   "name": "NextEra Energy"
+  },
+  {
+   "symbol": "NFLX",
+   "name": "Netflix Inc."
+  },
+  {
+   "symbol": "NKE",
+   "name": "NIKE Inc."
+  },
+  {
+   "symbol": "NVDA",
+   "name": "NVIDIA Corporation"
+  },
+  {
+   "symbol": "ORCL",
+   "name": "Oracle Corporation"
+  },
+  {
+   "symbol": "PEP",
+   "name": "PepsiCo Inc."
+  },
+  {
+   "symbol": "PFE",
+   "name": "Pfizer Inc."
+  },
+  {
+   "symbol": "PG",
+   "name": "The Procter & Gamble Company"
+  },
+  {
+   "symbol": "PLTR",
+   "name": "Palantir Technologies"
+  },
+  {
+   "symbol": "PM",
+   "name": "Philip Morris International"
+  },
+  {
+   "symbol": "PYPL",
+   "name": "PayPal Holdings"
+  },
+  {
+   "symbol": "QCOM",
+   "name": "Qualcomm Incorporated"
+  },
+  {
+   "symbol": "RTX",
+   "name": "RTX Corporation"
+  },
+  {
+   "symbol": "SBUX",
+   "name": "Starbucks Corporation"
+  },
+  {
+   "symbol": "SCHW",
+   "name": "The Charles Schwab Corporation"
+  },
+  {
+   "symbol": "SO",
+   "name": "The Southern Company"
+  },
+  {
+   "symbol": "SPG",
+   "name": "Simon Property Group"
+  },
+  {
+   "symbol": "T",
+   "name": "AT&T Inc."
+  },
+  {
+   "symbol": "TGT",
+   "name": "Target Corporation"
+  },
+  {
+   "symbol": "TMO",
+   "name": "Thermo Fisher Scientific"
+  },
+  {
+   "symbol": "TMUS",
+   "name": "T-Mobile US"
+  },
+  {
+   "symbol": "TSLA",
+   "name": "Tesla Inc."
+  },
+  {
+   "symbol": "TXN",
+   "name": "Texas Instruments"
+  },
+  {
+   "symbol": "UBER",
+   "name": "Uber Technologies"
+  },
+  {
+   "symbol": "UNH",
+   "name": "UnitedHealth Group"
+  },
+  {
+   "symbol": "UNP",
+   "name": "Union Pacific Corporation"
+  },
+  {
+   "symbol": "UPS",
+   "name": "United Parcel Service"
+  },
+  {
+   "symbol": "USB",
+   "name": "U.S. Bancorp"
+  },
+  {
+   "symbol": "V",
+   "name": "Visa Inc."
+  },
+  {
+   "symbol": "VZ",
+   "name": "Verizon Communications"
+  },
+  {
+   "symbol": "WFC",
+   "name": "Wells Fargo & Company"
+  },
+  {
+   "symbol": "WMT",
+   "name": "Walmart Inc."
+  },
+  {
+   "symbol": "XOM",
+   "name": "Exxon Mobil Corporation"
+  }
+ ]
+}

@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal
 
-from bullpit.broker.alpaca import LiveOrder
+from bullpit.broker.alpaca import AccountSummary, LiveOrder, MarketClock
 from bullpit.broker.base import Broker
 from bullpit.domain import Account, Asset, Position, SizedOrder, Trade
 from bullpit.errors import BrokerRejected
@@ -50,6 +50,25 @@ class FakeOrderBroker(FakeBroker):
     history: list[tuple[date, Decimal]] = field(default_factory=list)
     cancelled: list[str] = field(default_factory=list)
     lookups: list[Decimal] = field(default_factory=list)  # reference prices `find_order` got
+    prices: dict[str, Decimal] = field(default_factory=dict)  # symbol -> current price
+    clock: MarketClock | None = None
+
+    def get_account_summary(self) -> AccountSummary:
+        return AccountSummary(
+            account_number="PA3000000087",
+            status="ACTIVE",
+            equity=self.account.equity,
+            cash=self.account.cash,
+            last_equity=self.account.equity - Decimal("250"),
+        )
+
+    def last_prices(self) -> dict[str, Decimal]:
+        return dict(self.prices)
+
+    def market_clock(self) -> MarketClock:
+        if self.clock is None:
+            raise BrokerRejected("get_clock failed")
+        return self.clock
 
     @property
     def submitted(self) -> list[Trade]:

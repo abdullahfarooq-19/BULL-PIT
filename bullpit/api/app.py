@@ -8,17 +8,19 @@ Every refusal is a `Problem` JSON with a stable `code` (FR-19).
 
 from __future__ import annotations
 
+import json
 import re
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 from fastapi import BackgroundTasks, FastAPI, Query
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import JSONResponse
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph.state import CompiledStateGraph
 from sqlalchemy import select
@@ -27,20 +29,23 @@ from sqlalchemy.orm import Session, sessionmaker
 from starlette.requests import Request as HttpRequest
 
 from bullpit.api.schemas import (
+    AccountOut,
     ApprovalResult,
-    BacktestDetail,
-    BacktestRunOut,
     EquityPoint,
+    HistoryRow,
+    HistoryState,
+    MarketOut,
     NewRequest,
     OrderPreview,
     OrderPreviewBody,
+    PortfolioStats,
     PreviewWarning,
     Problem,
     RequestDetail,
     RequestStarted,
     RequestSummary,
-    ResultsPage,
     TradeOut,
+    WatchlistStock,
 )
 from bullpit.approval.gate import (
     ApprovalDecision,
@@ -61,8 +66,8 @@ from bullpit.errors import BrokerRejected, DataUnavailable
 from bullpit.graph import ApprovalWiring, Deps, build_graph
 from bullpit.journal.models import (
     ApprovalRecord,
-    BacktestRun,
     EquitySnapshot,
+    LikedStock,
     ReportRecord,
     TradeRecord,
     approval_record,
@@ -90,6 +95,8 @@ logger = get_logger(__name__)
 
 _TICKER = re.compile(r"^[A-Z][A-Z.]{0,9}$")
 _DEFAULT_LIMIT = 50
+_HISTORY_LIMIT = 200
+_HISTORY_MAX = 500
 _MAX_LIMIT = 200
 # Where a running request is, by the next node the checkpointer shows (M8 sec11.6).
 _STAGES = {
@@ -106,6 +113,10 @@ _STAGES = {
     "risk_review": "risk",
     "report": "report",
 }
+
+_WATCHLIST_FILE = Path(__file__).resolve().parents[1] / "data" / "sp100.json"
+_BROKER_NAME = "Alpaca Paper"
+_MASK_KEEP = 4
 
 Graph = CompiledStateGraph[RequestState, None, RequestState, RequestState]
 
@@ -158,6 +169,140 @@ def _summary(row: RequestRow, approval: ApprovalRecord | None) -> dict[str, Any]
     }
 
 
+def history_state(
+    status: str,
+    outcome: str | None,
+    decision: str | None,
+    trade_status: str | None,
+    order_type: str | None,
+) -> HistoryState:
+    """The one label a request shows on Trades History (M11.2 specs-plan sec11.1):
+    the request's status until it waits for a decision, then the trade's life. A buy report
+    that completed with no recorded decision (a CLI run, or one from before the approval
+    step) is "no_decision"."""
+    by_status: dict[str, HistoryState] = {
+        "running": "analysing",
+        "failed": "failed",
+        "rejected": "rejected_by_check",
+        "awaiting_approval": "decision_pending",
+    }
+    by_trade: dict[str | None, HistoryState] = {
+        "open": "open",
+        "closed": "closed",
+        "cancelled": "cancelled",
+    }
+    if status in by_status:
+        return by_status[status]
+    if trade_status in by_trade:
+        return by_trade[trade_status]
+    if trade_status == "pending":
+        return "waiting_at_limit" if order_type == "limit" else "order_placed"
+    if decision == "approved":
+        return "order_placed"
+    if decision == "rejected":
+        return "rejected_by_you"
+    if status == "expired":
+        return "expired"
+    return "no_decision" if outcome == "buy" else "no_trade"
+
+
+def portfolio_stats(
+    decisions: Sequence[str], trades: Sequence[tuple[str, Decimal | None]]
+) -> PortfolioStats:
+    """Realised statistics (M11.2-FR-18) from the owner's decisions and the live
+    trades' `(status, pnl)`: ongoing trades are pending or open; profit and loss
+    sum the closed trades' P&L by sign."""
+    profit = sum(
+        (pnl for status, pnl in trades if status == "closed" and pnl and pnl > 0), Decimal(0)
+    )
+    loss = sum(
+        (pnl for status, pnl in trades if status == "closed" and pnl and pnl < 0), Decimal(0)
+    )
+    return PortfolioStats(
+        approved=decisions.count("approved"),
+        rejected=decisions.count("rejected"),
+        ongoing=sum(status in ("pending", "open") for status, _ in trades),
+        closed=sum(status == "closed" for status, _ in trades),
+        total_profit=profit,
+        total_loss=loss,
+        net_pnl=profit + loss,
+    )
+
+
+def unrealised_pnl(entry_price: Decimal, price: Decimal, shares: int) -> Decimal:
+    """What an open trade would make or lose at `price`, to the cent (M11.3-FR-1)."""
+    return round_cent((price - entry_price) * shares)
+
+
+def _history_row(
+    row: RequestRow,
+    approval_row: ApprovalRecord | None,
+    trade_row: TradeRecord | None,
+    plan: SizedOrder | None,
+    price: Decimal | None = None,
+) -> HistoryRow:
+    """One Trades History row: numbers from the trade, else the approval the owner
+    gave, else the report's plan (so a row that waits for a decision shows it).
+    `price` is the symbol's current price, used only while the trade is open."""
+    summary = _summary(row, approval_row)
+    approval = None if approval_row is None else decision_from_row(approval_row)
+    trade = None if trade_row is None else trade_from_row(trade_row)
+    approved = approval is not None and approval.decision == "approved"
+    state = history_state(
+        row.status,
+        row.outcome,
+        None if approval is None else approval.decision,
+        None if trade is None else trade.status,
+        None if trade is None else trade.order_type,
+    )
+    shares: int | None = None
+    take_profit = stop_loss = limit = plan_price = None
+    if trade is not None:
+        shares, take_profit, stop_loss = trade.shares, trade.take_profit, trade.stop_loss
+        limit, plan_price = trade.limit_price, trade.reference_price
+    elif approval is not None and approved:
+        shares, take_profit, stop_loss = (
+            approval.approved_shares,
+            approval.take_profit,
+            approval.stop_loss,
+        )
+        limit = approval.limit_price
+    if plan is not None:
+        plan_price = plan.reference_price
+        if not (trade or approved):
+            shares, take_profit, stop_loss = plan.shares, plan.take_profit, plan.stop_loss
+    live_price = price if state == "open" else None
+    return HistoryRow(
+        id=row.id,
+        ticker=row.ticker,
+        created_at=summary["created_at"],
+        as_of=row.as_of,
+        state=state,
+        outcome=row.outcome,
+        status_reason=row.status_reason,
+        expires_at=summary["expires_at"],
+        order_type=summary["order_type"],
+        overrides=summary["overrides"],
+        shares=shares,
+        plan_price=plan_price,
+        entry_price=None if trade is None else trade.entry_price,
+        limit_price=limit,
+        take_profit=take_profit,
+        stop_loss=stop_loss,
+        exit_price=None if trade is None else trade.exit_price,
+        exit_date=None if trade is None else trade.exit_date,
+        exit_reason=None if trade is None else trade.exit_reason,
+        cancel_reason=None if trade is None else trade.cancel_reason,
+        pnl=None if trade is None else trade.pnl,
+        current_price=live_price,
+        unrealised_pnl=(
+            None
+            if live_price is None or trade is None or trade.entry_price is None
+            else unrealised_pnl(trade.entry_price, live_price, trade.shares)
+        ),
+    )
+
+
 def _progress(graph: Graph, row: RequestRow) -> tuple[str, int | None]:
     """The stage a request is at, and the debate round while it debates."""
     if row.status != "running":
@@ -168,32 +313,11 @@ def _progress(graph: Graph, row: RequestRow) -> tuple[str, int | None]:
     return stage, round_
 
 
-def _last_equity(session: Session, run_id: str) -> Decimal | None:
-    latest = session.scalars(
-        select(EquitySnapshot)
-        .where(EquitySnapshot.run_id == run_id)
-        .order_by(EquitySnapshot.day.desc())
-    ).first()
-    return None if latest is None else Decimal(latest.equity)
-
-
-def _run_out(session: Session, run: BacktestRun) -> dict[str, Any]:
-    return {
-        "id": run.id,
-        "policy": run.policy,
-        "tickers": run.tickers,
-        "start_date": run.start_date,
-        "end_date": run.end_date,
-        "weeks": run.weeks,
-        "status": run.status,
-        "status_reason": run.status_reason,
-        "created_at": _utc(run.created_at),
-        "last_equity": _last_equity(session, run.id),
-    }
-
-
-def _results_images(directory: Path) -> list[str]:
-    return sorted(path.name for path in directory.glob("*.png"))
+@lru_cache(maxsize=1)
+def _watchlist() -> list[tuple[str, str]]:
+    """The S&P 100 names the home page offers, as `(symbol, name)` in file order."""
+    stocks = json.loads(_WATCHLIST_FILE.read_text(encoding="utf-8"))["stocks"]
+    return [(stock["symbol"], stock["name"]) for stock in stocks]
 
 
 def _percent(part: Decimal, whole: Decimal) -> Decimal | None:
@@ -711,60 +835,132 @@ def create_app(
             except BrokerRejected as exc:
                 raise Refusal(502, Problem(code="broker_unavailable", message=str(exc))) from exc
 
-    # --- backtests and results (read only, C6) --------------------------------
+    # --- account, history, portfolio, watchlist (M11.2) -------------------------
 
-    @app.get("/backtests", response_model=list[BacktestRunOut])
-    def list_backtests() -> list[BacktestRunOut]:
-        with sessions() as session:
-            runs = session.scalars(
-                select(BacktestRun).order_by(BacktestRun.created_at.desc())
-            ).all()
-            return [BacktestRunOut(**_run_out(session, run)) for run in runs]
-
-    @app.get(
-        "/backtests/{run_id}/results",
-        response_model=BacktestDetail,
-        responses={404: {"model": Problem}},
-    )
-    def get_backtest(run_id: str) -> BacktestDetail:
-        with sessions() as session:
-            run = session.get(BacktestRun, run_id)
-            if run is None:
-                raise _not_found("backtest run")
-            trades = session.scalars(
-                select(TradeRecord).where(TradeRecord.run_id == run_id).order_by(TradeRecord.id)
-            ).all()
-            snapshots = session.scalars(
-                select(EquitySnapshot)
-                .where(EquitySnapshot.run_id == run_id)
-                .order_by(EquitySnapshot.day)
-            ).all()
-            return BacktestDetail(
-                **_run_out(session, run),
-                seed=run.seed,
-                starting_cash=Decimal(run.starting_cash),
-                models=run.models,
-                trades=[_trade_out(row) for row in trades],
-                equity=[EquityPoint(date=s.day, equity=Decimal(s.equity)) for s in snapshots],
-            )
-
-    @app.get("/results", response_model=ResultsPage, responses={404: {"model": Problem}})
-    def get_results() -> ResultsPage:
-        page = settings.results_dir / "results.md"
-        if not page.is_file():
-            raise _not_found("results page (run `bullpit eval` first)")
-        return ResultsPage(
-            markdown=page.read_text(encoding="utf-8"), images=_results_images(settings.results_dir)
+    @app.get("/account", response_model=AccountOut, responses={502: {"model": Problem}})
+    def get_account() -> AccountOut:
+        try:
+            summary = broker.get_account_summary()
+        except BrokerRejected as exc:
+            raise Refusal(502, Problem(code="broker_unavailable", message=str(exc))) from exc
+        change = summary.equity - summary.last_equity
+        return AccountOut(
+            broker=_BROKER_NAME,
+            account_type="demo",
+            account_number="•" * _MASK_KEEP + summary.account_number[-_MASK_KEEP:],
+            status=summary.status,
+            equity=summary.equity,
+            cash=summary.cash,
+            last_equity=summary.last_equity,
+            day_change=change,
+            day_change_pct=_percent(change, summary.last_equity),
         )
 
-    @app.get(
-        "/results/files/{name}",
-        response_class=FileResponse,
-        responses={404: {"model": Problem}},
+    @app.get("/market", response_model=MarketOut, responses={502: {"model": Problem}})
+    def get_market() -> MarketOut:
+        try:
+            clock = broker.market_clock()
+        except BrokerRejected as exc:
+            raise Refusal(502, Problem(code="broker_unavailable", message=str(exc))) from exc
+        return MarketOut(**clock.model_dump())
+
+    @app.get("/history", response_model=list[HistoryRow])
+    def list_history(
+        limit: int = Query(_HISTORY_LIMIT, ge=1, le=_HISTORY_MAX),
+    ) -> list[HistoryRow]:
+        sweep()
+        with sessions() as session:
+            found = session.execute(
+                select(RequestRow, ApprovalRecord, TradeRecord)
+                .outerjoin(ApprovalRecord, ApprovalRecord.request_id == RequestRow.id)
+                .outerjoin(TradeRecord, TradeRecord.request_id == RequestRow.id)
+                .where(RequestRow.mode == "live")
+                .order_by(RequestRow.created_at.desc())
+                .limit(limit)
+            ).all()
+            planned = [row.id for row, _, trade in found if trade is None and row.outcome == "buy"]
+            reports = session.execute(
+                select(ReportRecord.request_id, ReportRecord.report).where(
+                    ReportRecord.request_id.in_(planned)
+                )
+            ).all()
+            plans = {
+                request_id: SizedOrder.model_validate(report["order"])
+                for request_id, report in reports
+                if report.get("order")
+            }
+            prices: dict[str, Decimal] = {}
+            if any(trade is not None and trade.status == "open" for _, _, trade in found):
+                try:
+                    prices = broker.last_prices()
+                except BrokerRejected:  # the table still loads; open rows show no price
+                    logger.warning("last_prices_failed", exc_info=True)
+            return [
+                _history_row(row, approval, trade, plans.get(row.id), prices.get(row.ticker))
+                for row, approval, trade in found
+            ]
+
+    @app.get("/portfolio", response_model=PortfolioStats)
+    def get_portfolio() -> PortfolioStats:
+        with sessions() as session:
+            decisions = session.scalars(
+                select(ApprovalRecord.decision)
+                .join(RequestRow, RequestRow.id == ApprovalRecord.request_id)
+                .where(RequestRow.mode == "live")
+            ).all()
+            trades = session.execute(
+                select(TradeRecord.status, TradeRecord.pnl).where(TradeRecord.run_id.is_(None))
+            ).all()
+        return portfolio_stats(
+            decisions, [(status, None if pnl is None else Decimal(pnl)) for status, pnl in trades]
+        )
+
+    @app.get("/watchlist", response_model=list[WatchlistStock])
+    def list_watchlist() -> list[WatchlistStock]:
+        with sessions() as session:
+            liked = dict(session.execute(select(LikedStock.symbol, LikedStock.created_at)).all())
+        return [
+            WatchlistStock(
+                symbol=symbol,
+                name=name,
+                liked=symbol in liked,
+                liked_at=_utc(liked[symbol]) if symbol in liked else None,
+            )
+            for symbol, name in _watchlist()
+        ]
+
+    def set_liked(symbol: str, liked: bool) -> WatchlistStock:
+        """Likes or unlikes a watchlist stock; repeating it changes nothing."""
+        symbol = symbol.upper()
+        names = dict(_watchlist())
+        if symbol not in names:
+            raise _not_found("watchlist stock")
+        with sessions() as session:
+            row = session.get(LikedStock, symbol)
+            if liked and row is None:
+                row = LikedStock(symbol=symbol, created_at=now().replace(tzinfo=None))
+                session.add(row)
+            elif not liked and row is not None:
+                session.delete(row)
+                row = None
+            session.commit()
+            return WatchlistStock(
+                symbol=symbol,
+                name=names[symbol],
+                liked=row is not None,
+                liked_at=None if row is None else _utc(row.created_at),
+            )
+
+    @app.put(
+        "/watchlist/{symbol}", response_model=WatchlistStock, responses={404: {"model": Problem}}
     )
-    def get_result_image(name: str) -> FileResponse:
-        if name not in _results_images(settings.results_dir):  # only the listed charts
-            raise _not_found("chart")
-        return FileResponse(settings.results_dir / name, media_type="image/png")
+    def like_stock(symbol: str) -> WatchlistStock:
+        return set_liked(symbol, True)
+
+    @app.delete(
+        "/watchlist/{symbol}", response_model=WatchlistStock, responses={404: {"model": Problem}}
+    )
+    def unlike_stock(symbol: str) -> WatchlistStock:
+        return set_liked(symbol, False)
 
     return app

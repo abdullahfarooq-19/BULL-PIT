@@ -28,6 +28,7 @@ from alpaca.trading.enums import (
     TimeInForce,
 )
 from alpaca.trading.models import Asset as AlpacaAsset
+from alpaca.trading.models import Clock as AlpacaClock
 from alpaca.trading.models import Order as AlpacaOrder
 from alpaca.trading.models import PortfolioHistory, TradeAccount
 from alpaca.trading.models import Position as AlpacaPosition
@@ -151,6 +152,25 @@ def live_order(order: AlpacaOrder, *, submitted_on: date, reference_price: Decim
     )
 
 
+class AccountSummary(BaseModel, frozen=True):
+    """What the dashboard's account card shows (M11.2-FR-1, FR-2): Alpaca's own
+    figures, so the balance includes positions Bull Pit didn't open."""
+
+    account_number: str
+    status: str
+    equity: Decimal
+    cash: Decimal
+    last_equity: Decimal  # equity at the previous close, for the day change
+
+
+class MarketClock(BaseModel, frozen=True):
+    """Alpaca's market clock (M11.3-FR-12): both times are timezone-aware."""
+
+    is_open: bool
+    next_open: datetime
+    next_close: datetime
+
+
 @dataclass(frozen=True)
 class AlpacaBroker:
     """Broker backed by an Alpaca paper trading client."""
@@ -163,6 +183,43 @@ class AlpacaBroker:
         except APIError as exc:
             raise BrokerRejected(f"get_account failed: {exc}") from exc
         return Account(cash=Decimal(str(account.cash)), equity=Decimal(str(account.equity)))
+
+    def get_account_summary(self) -> AccountSummary:
+        """The account's number, status, equity, cash and last close's equity."""
+        try:
+            account = cast(TradeAccount, self.client.get_account())
+        except APIError as exc:
+            raise BrokerRejected(f"get_account failed: {exc}") from exc
+        return AccountSummary(
+            account_number=account.account_number,
+            status=account.status.value,
+            equity=Decimal(str(account.equity)),
+            cash=Decimal(str(account.cash)),
+            last_equity=Decimal(str(account.last_equity)),
+        )
+
+    def last_prices(self) -> dict[str, Decimal]:
+        """The current price of every open position, by symbol, in one call
+        (M11.3-FR-1)."""
+        try:
+            positions = cast(list[AlpacaPosition], self.client.get_all_positions())
+        except (APIError, RequestException) as exc:
+            raise BrokerRejected(f"list positions failed: {exc}") from exc
+        return {
+            position.symbol: Decimal(str(position.current_price))
+            for position in positions
+            if position.current_price is not None
+        }
+
+    def market_clock(self) -> MarketClock:
+        """Whether the US market is open, and when it next opens and closes."""
+        try:
+            clock = cast(AlpacaClock, self.client.get_clock())
+        except (APIError, RequestException) as exc:
+            raise BrokerRejected(f"get_clock failed: {exc}") from exc
+        return MarketClock(
+            is_open=clock.is_open, next_open=clock.next_open, next_close=clock.next_close
+        )
 
     def get_position(self, symbol: str) -> Position | None:
         try:

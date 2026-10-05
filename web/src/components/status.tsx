@@ -6,6 +6,15 @@ import { untilText } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
 const TONES: Record<string, { dot: string; label: string }> = {
+  // Trades History's one-label lifecycle (M11.2-FR-10); the keys are the API's `state`.
+  analysing: { dot: "bg-amber animate-pulse", label: "Analysing" },
+  decision_pending: { dot: "bg-amber", label: "Decision pending" },
+  rejected_by_you: { dot: "bg-muted-foreground", label: "Rejected by you" },
+  order_placed: { dot: "bg-amber", label: "Order placed" },
+  waiting_at_limit: { dot: "bg-amber", label: "Waiting at limit" },
+  no_decision: { dot: "bg-muted-foreground", label: "No decision" },
+  no_trade: { dot: "bg-neutral-signal", label: "No trade" },
+  rejected_by_check: { dot: "bg-bear", label: "Rejected by check" },
   running: { dot: "bg-amber animate-pulse", label: "Running" },
   awaiting_approval: { dot: "bg-amber", label: "Waiting for you" },
   completed: { dot: "bg-neutral-signal", label: "Completed" },

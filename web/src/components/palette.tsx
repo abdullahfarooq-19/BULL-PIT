@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowRight, CandlestickChart, History, LineChart, Search, Layers } from "lucide-react";
+import { ArrowRight, CandlestickChart, ChartPie, History, Wallet } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
@@ -17,10 +17,9 @@ import {
 import { useLoad } from "@/lib/use-load";
 
 const PAGES = [
-  { label: "New request", href: "/", icon: Search },
-  { label: "History", href: "/requests", icon: History },
-  { label: "Trades", href: "/trades", icon: LineChart },
-  { label: "Backtests", href: "/backtests", icon: Layers },
+  { label: "Account & Wallet", href: "/", icon: Wallet },
+  { label: "Trades History", href: "/trades", icon: History },
+  { label: "Portfolio", href: "/portfolio", icon: ChartPie },
 ];
 
 /** Ctrl+K: start a request for a typed ticker, or jump to a past request or a page. */

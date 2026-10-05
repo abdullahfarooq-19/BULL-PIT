@@ -1,11 +1,12 @@
 "use client";
 
-import { Command as CommandIcon, History, Layers, LineChart, Loader2, Search } from "lucide-react";
+import { ChartPie, Command as CommandIcon, History, Loader2, Wallet } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 import { useFillCheck } from "@/components/fill-check";
+import { Logo } from "@/components/logo";
 import { Palette } from "@/components/palette";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,10 +25,9 @@ import {
 } from "@/components/ui/sidebar";
 
 const NAV = [
-  { label: "New request", href: "/", icon: Search },
-  { label: "History", href: "/requests", icon: History },
-  { label: "Trades", href: "/trades", icon: LineChart },
-  { label: "Backtests", href: "/backtests", icon: Layers },
+  { label: "Account & Wallet", href: "/", icon: Wallet },
+  { label: "Trades History", href: "/trades", icon: History },
+  { label: "Portfolio", href: "/portfolio", icon: ChartPie },
 ];
 
 function isActive(pathname: string, href: string): boolean {
@@ -63,8 +63,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <SidebarProvider>
       <Sidebar collapsible="icon">
         <SidebarHeader className="px-3 py-4">
-          <Link href="/" className="flex items-center gap-2 font-mono text-sm font-semibold tracking-widest">
-            <span className="size-2.5 shrink-0 rounded-full bg-amber" aria-hidden />
+          <Link href="/" aria-label="Bull Pit" className="flex items-center gap-2 font-mono text-sm font-semibold tracking-widest">
+            <Logo className="size-6 shrink-0" />
             <span className="group-data-[collapsible=icon]:hidden">BULL PIT</span>
           </Link>
         </SidebarHeader>

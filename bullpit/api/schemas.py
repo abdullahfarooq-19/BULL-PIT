@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -58,6 +59,93 @@ class RequestDetail(RequestSummary):
     debate_round: int | None
     approval: ApprovalDecision | None
     trade: TradeOut | None
+
+
+HistoryState = Literal[
+    "analysing",
+    "decision_pending",
+    "rejected_by_you",
+    "order_placed",
+    "waiting_at_limit",
+    "open",
+    "closed",
+    "cancelled",
+    "expired",
+    "no_decision",
+    "no_trade",
+    "rejected_by_check",
+    "failed",
+]
+
+
+class HistoryRow(BaseModel, frozen=True):
+    """One live request on the Trades History page (M11.2-FR-9 to FR-12). The
+    numbers come from the trade, else the approval, else the report's plan."""
+
+    id: str
+    ticker: str
+    created_at: datetime
+    as_of: date
+    state: HistoryState
+    outcome: str | None  # buy | no_trade
+    status_reason: str | None
+    expires_at: datetime | None  # only while the report waits for a decision
+    order_type: str | None
+    overrides: list[str]
+    shares: int | None
+    plan_price: Decimal | None  # the report's reference price
+    entry_price: Decimal | None  # the fill
+    limit_price: Decimal | None
+    take_profit: Decimal | None
+    stop_loss: Decimal | None
+    exit_price: Decimal | None
+    exit_date: date | None
+    exit_reason: str | None
+    cancel_reason: str | None
+    pnl: Decimal | None
+    current_price: Decimal | None  # open trades only (M11.3-FR-1)
+    unrealised_pnl: Decimal | None
+
+
+class AccountOut(BaseModel, frozen=True):
+    """The broker account card (M11.2-FR-1, FR-2)."""
+
+    broker: str
+    account_type: Literal["demo"]  # the paper-only guard makes "live" impossible
+    account_number: str  # masked
+    status: str
+    equity: Decimal
+    cash: Decimal
+    last_equity: Decimal
+    day_change: Decimal
+    day_change_pct: Decimal | None  # None when last_equity is 0
+
+
+class MarketOut(BaseModel, frozen=True):
+    """Whether the US market is open and when it next changes (M11.3-FR-12)."""
+
+    is_open: bool
+    next_open: datetime
+    next_close: datetime
+
+
+class PortfolioStats(BaseModel, frozen=True):
+    """Realised statistics of the live journal (M11.2-FR-18)."""
+
+    approved: int
+    rejected: int
+    ongoing: int
+    closed: int
+    total_profit: Decimal
+    total_loss: Decimal  # zero or negative
+    net_pnl: Decimal
+
+
+class WatchlistStock(BaseModel, frozen=True):
+    symbol: str
+    name: str
+    liked: bool
+    liked_at: datetime | None
 
 
 class OrderPreviewBody(BaseModel, frozen=True):
@@ -113,29 +201,3 @@ class ApprovalResult(BaseModel, frozen=True):
 class EquityPoint(BaseModel, frozen=True):
     date: date
     equity: Decimal
-
-
-class BacktestRunOut(BaseModel, frozen=True):
-    id: str
-    policy: str
-    tickers: list[str]
-    start_date: date
-    end_date: date
-    weeks: int
-    status: str
-    status_reason: str | None
-    created_at: datetime
-    last_equity: Decimal | None
-
-
-class BacktestDetail(BacktestRunOut):
-    seed: int
-    starting_cash: Decimal
-    models: dict[str, str]
-    trades: list[TradeOut]
-    equity: list[EquityPoint]
-
-
-class ResultsPage(BaseModel, frozen=True):
-    markdown: str
-    images: list[str]

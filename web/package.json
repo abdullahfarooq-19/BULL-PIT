@@ -6,6 +6,8 @@
     "dev": "next dev -H 127.0.0.1",
     "build": "next build",
     "start": "next start -H 127.0.0.1",
+    "//open": "Windows only (cmd's start and ping): opens the browser about 4 seconds after the server starts.",
+    "open": "start \"\" /b cmd /c \"ping -n 5 127.0.0.1 >nul & start http://127.0.0.1:3000\" & npm run start",
     "lint": "eslint",
     "gen:api": "uv run --project .. bullpit openapi --out openapi.json && openapi-typescript openapi.json -o src/api/schema.d.ts"
   },
@@ -22,8 +24,6 @@
     "radix-ui": "^1.6.7",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1",
     "shadcn": "^4.21.0",
     "sonner": "^2.0.8",
     "tailwind-merge": "^3.7.0",

@@ -2,7 +2,9 @@
 
 | | |
 |---|---|
-| **Status** | Revision 8: D15 to D18 added (report explanations, order box, cancel, advanced mode); M7 accepted, M8 built and awaiting acceptance, M11.1 built and merged |
+| **Status** | Revision 10: D21 added (the Backtests page leaves the dashboard); revision 9 content follows. Earlier: Revision 9: D19 and D20 added (dashboard restructure, live balance and watchlist); M7 accepted, M8 built and awaiting acceptance, M11.1 built and merged, M11.2 in build |
+| **Changes in revision 10** | D21 added ([§3](#3-deviations-from-the-architecture-roadmap)); M11.4 added to §4 and §5; `architecture.md` v2.9 |
+| **Changes in revision 9** | D19 and D20 added ([§3](#3-deviations-from-the-architecture-roadmap)); M11.2 added to §4 and §5; §8 gets the `0009` row; `architecture.md` v2.8 |
 | **Changes in revision 8** | D15 to D18 added ([§3](#3-deviations-from-the-architecture-roadmap)); M11.1 added to §4 and §5 and its report-page and order-box part taken out of M9; §8 gets the `0008` row; `architecture.md` v2.7 |
 | **Changes in revision 7** | D14 added ([§3](#3-deviations-from-the-architecture-roadmap)); §2.1 frontend row, §2.3 layout (`api/` → `bullpit/api/`), §8 M8 row and §10.1 C6 updated; `architecture.md` v2.6 |
 | **Changes in revision 6** | D13 added ([§3](#3-deviations-from-the-architecture-roadmap)), Q5 answered ([§10](#10-decisions-log)); M7 becomes a pilot evaluation; `architecture.md` v2.5 |
@@ -193,7 +195,7 @@ bull-pit/
 
 ## 3. Deviations from the architecture roadmap
 
-The architecture's M0–M9 order is kept. Carrying it out properly needs a few pieces to arrive **earlier** than the architecture roadmap implies, because later milestones depend on them (D1–D7). None of these change the system's behaviour. D8–D18 **do** change the architecture, and `architecture.md` (v2.1, v2.2, v2.4, v2.5, v2.6, v2.7) has been updated to match.
+The architecture's M0–M9 order is kept. Carrying it out properly needs a few pieces to arrive **earlier** than the architecture roadmap implies, because later milestones depend on them (D1–D7). None of these change the system's behaviour. D8–D21 **do** change the architecture, and `architecture.md` (v2.1, v2.2, v2.4, v2.5, v2.6, v2.7, v2.8, v2.9) has been updated to match.
 
 **Status: D1–D9 approved by the owner on 2026-09-28; D10 and D11 approved the same day with the M3 specs.**
 
@@ -217,6 +219,9 @@ The architecture's M0–M9 order is kept. Carrying it out properly needs a few p
 | D16 | **The order box prices the order from the live price the owner sees:** exits follow the entry by keeping the plan's stop and target distances; "buy now" is a market order whose staleness is measured against the seen price; a second mode places a GTC limit-entry bracket. Architecture Part 11, Part 13 and Part 14 updated (v2.7) | Today's exits hang on the last close, so a gap can leave a stop or target on the wrong side of the real fill. Keeping the distances reproduces the ATR rule exactly, and a pending order on Alpaca needs no new moving part (D-M11.1-5) |
 | D17 | **The owner can cancel a pending order.** Architecture Part 14 and §9 updated (v2.7) | §9 says the system never touches a trade after approval. A GTC limit order that never fills would hold cash for ever, so an **unfilled** order can be cancelled; a filled trade is still never touched (D-M11.1-6) |
 | D18 | **Advanced mode:** the owner may edit stop, take-profit and shares; available cash is the only hard limit; the 10% cap and the 1% risk limit become warnings, confirmed and recorded. "Shares can only go down" now describes the **recommendation**. Architecture Part 11 and Part 13 updated (v2.7) | The owner's decision of 2026-10-05: control with a fair warning. A trade can never spend cash the account doesn't have, and every override is recorded and badged (D-M11.1-7) |
+| D19 | **The dashboard has four pages: Account & Wallet (`/`), Trades History (`/trades`, History and Trades merged, one row per analysis from "analysing" to "closed"), Portfolio (`/portfolio`, the equity chart, realised statistics and a description) and Backtests;** the analysis page gains a link back. This overrides C10's "no new pages". Architecture Part 13 and Part 15 updated (v2.8) | The owner's decision of 2026-10-06: History and Trades did the same job, and no page showed the account as a whole ([M11.2 specs-plan](milestones/M11.2-dashboard-restructure/specs-plan.md) D-M11.2-1 to D-M11.2-7) |
+| D20 | **The home page shows the broker account's live balance (Alpaca's equity, polled every 5 s) and a watchlist of S&P 100 names the owner can like; likes are stored in a new journal table `liked_stocks`.** New API endpoints `/history`, `/account`, `/portfolio`, `/watchlist`. Architecture Part 15 updated (v2.8) | The owner wants a list to choose from and the real account balance in view. The balance is the broker's own figure, so it includes trades Bull Pit didn't place (D-M11.2-4, D-M11.2-8 to D-M11.2-10) |
+| D21 | **The dashboard has three pages: Account & Wallet, Trades History and Portfolio. The Backtests page, and the API endpoints behind it (`/backtests`, `/backtests/{run_id}/results`, `/results`, `/results/files/{name}`), are removed.** Backtest results are read from `docs/results/results.md`, which `bullpit eval` already writes. This supersedes the Backtests page of D19, M8's FR-22 Backtests page and C6's dashboard reuse. Architecture Part 13 and §13 updated (v2.9) | The owner's decision of 2026-10-06. The page only rendered the same Markdown file plus a read-only table of runs; backtests are started and read from the command line. The runs and their trades stay in the journal ([M11.4 specs-plan](milestones/M11.4-remove-backtests-page/specs-plan.md)) |
 
 ---
 
@@ -235,6 +240,8 @@ The architecture's M0–M9 order is kept. Carrying it out properly needs a few p
 | **M8** | Live mode: API, dashboard, approval, bracket orders, fill check | 13, 14 (Alpaca), live mode | XL | M5 (M6 for the journal) |
 | **M9** | Dashboard polish, README, results write-up | — | M | M7, M8 |
 | **M11.1** | Report explanations, order box, cancel, advanced mode | 9, 11, 12, 13, 14 (D15 to D18) | XL | M8 |
+| **M11.2** | Dashboard restructure: Account & Wallet, Trades History, Portfolio | 13, 15 (D19, D20) | L | M11.1 |
+| **M11.4** | Remove the Backtests page from the dashboard | 13 (D21) | S | M11.2 |
 
 Size is relative effort (S < M < L < XL), not a calendar estimate. Real durations get recorded in each retrospective. Size also sets the document set ([§1.2](#12-per-milestone-documents)): M0, M2, M5, M7 and M9 use `specs-plan.md`; M1, M3, M4, M6 and M8 use separate `specs.md` and `plan.md`.
 
@@ -254,7 +261,7 @@ flowchart LR
   M8 --> M9
 ```
 
-M11.1 is the owner's label (there is no M10 or M11); it is built on top of M8 and does not block M9.
+M11.1, M11.2 and M11.4 are the owner's labels (there is no M10 or M11); they are built on top of M8 and do not block M9.
 
 M1 and M2 are independent of each other and could be built in either order. M7 and M8 are also independent once M6 is done. By default we still work **sequentially**, one milestone at a time, so the gated review stays manageable.
 
@@ -581,13 +588,25 @@ Each milestone below states the goal, scope, deliverables, **draft acceptance cr
 
 ---
 
+### M11.2 — Dashboard restructure
+
+**Goal:** The dashboard has overlapping History and Trades pages, no stock list and no account view. The done-when: *the owner starts an analysis from a watchlist stock, sees it in Trades History as it runs and while it waits for a decision, approves it, sees it become an open trade, opens its analysis and returns with the back link, and the balance on Account & Wallet and the statistics and chart on Portfolio agree with Alpaca and the journal.* Size L, one `specs-plan.md` + `task.md` by the owner's instruction. Depends on M11.1. Specs, plan, tasks and acceptance criteria: [`specs-plan.md`](milestones/M11.2-dashboard-restructure/specs-plan.md). Deviations D19 and D20.
+
+---
+
+### M11.4 — Remove the Backtests page
+
+**Goal:** The dashboard keeps only the live tool; backtest results are the Markdown file `docs/results/results.md`. Size S, one `specs-plan.md` by the owner's instruction. Depends on M11.2. Deviation D21. See [`specs-plan.md`](milestones/M11.4-remove-backtests-page/specs-plan.md).
+
+---
+
 ### M9 — Dashboard polish, README, results write-up
 
 **Goal:** The architecture's done-when: *"A stranger can understand the system and its results from the repo."*
 
 **In scope**
 
-- Dashboard: fix the issues found while using it after M8 acceptance. No new pages, no themes, no mobile layout: it's a single-user tool on a laptop (C10). The report-page and order-box changes (analyst and debate explanations, live price, limit entry, cancel, advanced mode) moved to M11.1.
+- Dashboard: fix the issues found while using it after M8 acceptance. No new pages, no themes, no mobile layout: it's a single-user tool on a laptop (C10). The report-page and order-box changes (analyst and debate explanations, live price, limit entry, cancel, advanced mode) moved to M11.1; the page restructure (Trades History, Portfolio, Account & Wallet) moved to M11.2.
 - `README.md`: what it is, the safety statement (paper only, not financial advice), a quick start (uv, `.env`, `bullpit doctor`, first request), an architecture summary with diagrams, how to run a backtest and evaluation, the results table and its limits, project structure, links to the ADRs and milestone docs.
 - The final M7 results, including the owner's live track record so far (the architecture calls this "your cleanest evidence").
 - Clean-up of dead code and TODOs, a dependency audit, and a final secret scan across the git history.
@@ -688,6 +707,7 @@ The journal grows one milestone at a time, and each step is one Alembic migratio
 | M7 | `backtest_runs.policy`, `backtest_runs.source_run_id` (columns only, migration `0006`) |
 | M8 | Migration `0007_live`: `requests` statuses `awaiting_approval` and `expired`, the lock index on `running` and `awaiting_approval`; `approvals.latest_price` and `.confirmations` (`decided_by` gains `owner`); `trades` order ID, stop-leg ID and take-profit-leg ID columns (`exit_reason` gains `manual`); `equity_snapshots` a partial unique index on `date` for live rows (`run_id` NULL) and nullable `cash` and `positions_value`. LangGraph checkpoint tables live in their own SQLite file, `checkpoints.db`, created by the checkpointer and outside Alembic (D-M8-8) |
 | M11.1 | Migration `0008_order_box`: `approvals` gain `order_type` (default `market`), `entry_price`, `limit_price`, `stop_loss`, `take_profit`, `seen_price` and `overrides` (JSON), so an order can be rebuilt from its approval row; `trades` gain `order_type` (default `market`) and `limit_price`. The report is JSON, so its new optional fields need no migration |
+| M11.2 | Migration `0009_liked_stocks`: a new table `liked_stocks` (`symbol` primary key, `created_at`). No existing table changes |
 
 ➕ = not listed in architecture Part 15; added for resumable backtests and evaluation bookkeeping.
 

@@ -7,6 +7,12 @@ export function money(value: string | number): string {
   return `$${Number(value).toLocaleString("en-US", TWO)}`;
 }
 
+/** Money with its sign in front of the dollar sign, `+$250.00` or `-$250.00`; zero has none. */
+export function signedMoney(value: string | number): string {
+  const amount = Number(value);
+  return `${amount < 0 ? "-" : amount > 0 ? "+" : ""}${money(Math.abs(amount))}`;
+}
+
 export function pct(value: string | number): string {
   return `${Number(value).toFixed(1)}%`;
 }
