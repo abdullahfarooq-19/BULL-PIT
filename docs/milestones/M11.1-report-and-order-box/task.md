@@ -178,6 +178,23 @@ Request `20261002-GOOGL-356d51b9` (real GOOGL report, buy, 15 shares, plan refer
 
 **(b) the market order is not done**: it needs a US session (opens 18:30 PKT today) and a second buy report; recorded here as pending, to be run when the owner chooses.
 
+### T-19: token measurement, AC-16 (2026-10-05, two fresh debated live requests through the real API, nothing cached)
+
+Requests `20261002-HD-f9df0e4a` and `20261002-BAC-97012e4a`: both routed to a debate, both ended in no trade with `prose_source` `llm`, a narrative, and only the soft "1 debate paragraphs are over 110 words" warning. Tokens are input + output + reasoning from `llm_calls`:
+
+| Step | HD | BAC | Baseline (§11.5, M5) |
+|---|---|---|---|
+| Analysts (3 small calls) | 1.39K | 1.56K | about 2K |
+| Debate (4 large calls) | 5.0K | 6.4K | about 7K |
+| Trader (large) | 3.8K | 2.1K | about 2.4K |
+| **Report call** (small, now with three analyst paragraphs) | 2.5K | 2.9K | 2.5 to 2.7K |
+| **Debate narrative** (small, new) | 1.5K, then a retry 1.7K = 3.3K | 1.9K | none |
+| **Total** | **16.0K** (small 7.2K, large 8.8K) | **14.9K** (small 6.4K, large 8.5K) | about 15.5K (small 4.7K, large 10.9K) |
+
+Against the estimate in §11.5: the report call grew by about 0 to 0.4K for the analyst paragraphs (estimate 0.65K) and the narrative cost 1.5 to 1.9K when accepted first time (estimate 1.5 to 2.0K), 3.3K when it needed its one retry (HD). So the additions are about **2.0 to 2.7K on a clean run and up to 3.3K plus with a retry**, in line with the 2.2 to 2.7K estimate. The small model's share rose from about 4.7K to 6.4 to 7.2K (+36 to 53%); the large model's share did not change (the two no-trades skipped the risk review, so it was lower than the baseline). Per dev-plan §6.5, a debated live request's total rose by about 16% to 20% over the baseline when the narrative is accepted first time (less than the 20% that needs a note); with a retry it is about +27%. The large model, which sets the daily limit (about 18 debated requests), is untouched. No other call's tokens changed. Combined with T-13 the day's real tokens were about 46K + 12K + 31K.
+
+**Owner hand checks still to do** (AC-1, AC-4, AC-5, AC-11, AC-14): the click-through of the order box (5-second refresh and its stop when the tab is hidden, mode switch, advanced mode and its confirmation, Reject, hold-to-approve, Cancel), reading three real reports (a buy: GOOGL `20261002-GOOGL-356d51b9`; a no-trade after a debate: PG, HD or BAC; a no-trade **without** a debate: none made yet, a weak-signal stock costs about 3K), and the order type and Override badges on History and Trades.
+
 ## Retrospective
 
 (Written in T-20.)
