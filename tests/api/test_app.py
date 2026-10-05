@@ -29,8 +29,11 @@ from bullpit.journal.models import (
     BacktestRun,
     EquitySnapshot,
     Request,
+    TradeRecord,
+    approval_record,
     trade_record,
 )
+from bullpit.risk.sizing import round_cent
 from bullpit.runners.request import make_checkpointer, naive_utc_now, resume_live
 from tests.broker.fake_broker import FakeOrderBroker
 from tests.test_graph import RecordingLLM, _patch_news, _patch_prices, _patch_sec
@@ -243,7 +246,7 @@ def test_one_order_per_approval(env: Env, settings: Settings) -> None:
     env.broker.orders.clear()
     other_id, other = env.waiting_report(client)
     shares = other["order"]["shares"]
-    _record_approval(env.sessions, other_id, shares - 1, shares)
+    _record_approval(env.sessions, other_id, other["order"], approved=shares - 1)
 
     finished = _approve(client, other_id, shares=shares)
 
@@ -267,29 +270,45 @@ def test_one_order_per_approval(env: Env, settings: Settings) -> None:
 
 
 def _record_approval(
-    sessions: sessionmaker[Session], request_id: str, approved: int, recommended: int
+    sessions: sessionmaker[Session],
+    request_id: str,
+    order: dict[str, Any],
+    *,
+    approved: int | None = None,
+    limit: Decimal | None = None,
 ) -> None:
+    """The approvals row the API commits before the order step, written by hand to
+    stand for a process that died right after it."""
+    reference = Decimal(order["reference_price"])
+    entry = reference if limit is None else limit
+    repriced_stop = entry - (reference - Decimal(order["stop_loss"]))
+    repriced_target = entry + (Decimal(order["take_profit"]) - reference)
+    decision = ApprovalDecision(
+        decision="approved",
+        recommended_shares=order["shares"],
+        approved_shares=order["shares"] if approved is None else approved,
+        decided_by="owner",
+        order_type="market" if limit is None else "limit",
+        entry_price=entry,
+        limit_price=limit,
+        stop_loss=repriced_stop,
+        take_profit=repriced_target,
+        seen_price=None if limit is not None else entry,
+    )
     with sessions() as session:
-        session.add(
-            ApprovalRecord(
-                request_id=request_id,
-                decision="approved",
-                recommended_shares=recommended,
-                approved_shares=approved,
-                decided_by="owner",
-                decided_at=naive_utc_now(),
-                confirmations=[],
-            )
-        )
+        session.add(approval_record(request_id, decision, decided_at=naive_utc_now()))
         session.commit()
 
 
-@pytest.mark.parametrize("order_exists", [True, False])
-def test_recorded_approval_past_expiry(env: Env, order_exists: bool) -> None:
+@pytest.mark.parametrize(
+    ("order_exists", "is_limit"), [(True, False), (False, False), (True, True)]
+)
+def test_recorded_approval_past_expiry(env: Env, order_exists: bool, is_limit: bool) -> None:
     client = env.client()
     request_id, report = env.waiting_report(client)
     shares = report["order"]["shares"]
-    _record_approval(env.sessions, request_id, shares, shares)
+    limit = Decimal(report["order"]["reference_price"]) - 5 if is_limit else None
+    _record_approval(env.sessions, request_id, report["order"], limit=limit)
     if order_exists:  # the order reached Alpaca before the process died
         trade = Trade(
             client_order_id=f"{ORDER_ID_PREFIX}{request_id}",
@@ -312,12 +331,101 @@ def test_recorded_approval_past_expiry(env: Env, order_exists: bool) -> None:
     if order_exists:
         assert detail["status"] == "completed"
         assert detail["trade"]["client_order_id"] == f"{ORDER_ID_PREFIX}{request_id}"
+        # The lookup carries the approved entry as the trade's reference price (FR-20).
+        assert env.broker.lookups == [limit or Decimal(report["order"]["reference_price"])]
     else:
         assert detail["status"] == "expired"
         assert (
             detail["status_reason"]
             == "Approved, but no order was placed before the report expired."
         )
+
+
+def _limit_body(report: dict[str, Any]) -> dict[str, Any]:
+    """A limit well below the report's price, which is also the price now."""
+    return {
+        "order_type": "limit",
+        "limit_price": str(Decimal(report["order"]["reference_price"]) - 5),
+    }
+
+
+@pytest.mark.parametrize("mode", ["market", "limit", "advanced"])
+def test_order_equals_recorded_approval(env: Env, mode: str) -> None:
+    """The request sent to Alpaca is built from the committed approvals row
+    (M11.1-AC-9), and the trades row records its entry as the reference price."""
+    client = env.client()
+    request_id, report = env.waiting_report(client)
+    order = report["order"]
+    reference = Decimal(order["reference_price"])
+    bodies = {
+        "market": {},
+        "limit": _limit_body(report),
+        "advanced": {
+            "advanced": True,
+            "shares": order["shares"] + 2,
+            "stop_loss": str(reference - 1),
+            "take_profit": str(reference + 2),
+            "confirm_overrides": True,
+        },
+    }
+
+    done = _approve(client, request_id, **bodies[mode])
+
+    assert done.status_code == 200, done.text
+    (row,) = _rows(env.sessions, ApprovalRecord)
+    (placed,) = env.broker.submitted
+    assert placed.client_order_id == f"{ORDER_ID_PREFIX}{request_id}"
+    assert (placed.shares, placed.reference_price) == (
+        row.approved_shares,
+        Decimal(row.entry_price),
+    )
+    assert (placed.stop_loss, placed.take_profit) == (
+        Decimal(row.stop_loss),
+        Decimal(row.take_profit),
+    )
+    assert placed.order_type == row.order_type == ("limit" if mode == "limit" else "market")
+    assert placed.limit_price == (None if row.limit_price is None else Decimal(row.limit_price))
+    (trade_row,) = _rows(env.sessions, TradeRecord)
+    assert (trade_row.reference_price, trade_row.order_type) == (row.entry_price, row.order_type)
+    if mode == "limit":
+        limit = round_cent(reference - 5)
+        assert placed.limit_price == limit == placed.reference_price
+        assert placed.stop_loss == round_cent(limit - (reference - Decimal(order["stop_loss"])))
+    if mode == "advanced":
+        assert (placed.shares, placed.stop_loss) == (order["shares"] + 2, round_cent(reference - 1))
+        assert row.overrides == ["custom_exits", "size_above_plan"]
+
+
+def test_a_recorded_limit_approval_is_resent_as_a_limit_order(env: Env) -> None:
+    client = env.client()
+    request_id, report = env.waiting_report(client)
+    limit = Decimal(report["order"]["reference_price"]) - 5
+    _record_approval(env.sessions, request_id, report["order"], limit=limit)
+
+    finished = _approve(client, request_id, order_type="market")  # the body is ignored
+
+    assert finished.status_code == 200, finished.text
+    (placed,) = env.broker.submitted
+    assert (placed.order_type, placed.limit_price, placed.reference_price) == (
+        "limit",
+        limit,
+        limit,
+    )
+
+
+def test_pending_limit_reserves_cash_at_limit(env: Env) -> None:
+    client = env.client()
+    request_id, report = env.waiting_report(client)
+    limit = Decimal(report["order"]["reference_price"]) - 5
+    # A waiting limit order in another ticker holds all but $1,000 of Alpaca's cash.
+    _seed_pending(env.sessions, "MSFT", shares=990, reference=Decimal(99000) / 990, limit=True)
+
+    refused = _approve(client, request_id, **_limit_body(report))
+
+    assert refused.status_code == 409, refused.text
+    assert refused.json()["code"] == "rules"
+    assert refused.json()["max_shares"] == int(Decimal("1000") // limit)  # priced at the limit
+    assert env.broker.submitted == []
 
 
 def test_loss_warning_from_live_snapshots(env: Env) -> None:
@@ -380,7 +488,13 @@ def test_pending_order_counts(env: Env) -> None:
 
 
 def _seed_pending(
-    sessions: sessionmaker[Session], ticker: str, *, shares: int, reference: Decimal, tag: str = ""
+    sessions: sessionmaker[Session],
+    ticker: str,
+    *,
+    shares: int,
+    reference: Decimal,
+    tag: str = "",
+    limit: bool = False,
 ) -> None:
     trade = Trade(
         client_order_id=f"bullpit-seed-{ticker}{tag}",
@@ -391,6 +505,8 @@ def _seed_pending(
         stop_loss=reference - 10,
         take_profit=reference + 15,
         status="pending",
+        order_type="limit" if limit else "market",
+        limit_price=reference if limit else None,
     )
     with sessions() as session:
         session.add(

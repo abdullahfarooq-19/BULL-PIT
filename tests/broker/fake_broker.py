@@ -49,6 +49,7 @@ class FakeOrderBroker(FakeBroker):
     sell_fills: list[tuple[datetime, date, Decimal]] = field(default_factory=list)
     history: list[tuple[date, Decimal]] = field(default_factory=list)
     cancelled: list[str] = field(default_factory=list)
+    lookups: list[Decimal] = field(default_factory=list)  # reference prices `find_order` got
 
     @property
     def submitted(self) -> list[Trade]:
@@ -93,6 +94,7 @@ class FakeOrderBroker(FakeBroker):
     def find_order(
         self, client_order_id: str, *, submitted_on: date, reference_price: Decimal
     ) -> LiveOrder | None:
+        self.lookups.append(reference_price)
         if client_order_id in self.live_orders:
             return self.live_orders[client_order_id]
         if client_order_id in self.orders:

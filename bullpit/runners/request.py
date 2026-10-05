@@ -374,7 +374,12 @@ def _expire(session: Session, row: Request, broker: AlpacaBroker) -> None:
         ).first()
         if recommendation is None or recommendation.final_order is None:
             raise ValueError(f"approved request {row.id!r} has no final order")
-        reference = SizedOrder.model_validate(recommendation.final_order).reference_price
+        # A recorded approval knows its entry: a limit trade's reference is its limit (FR-20).
+        reference = (
+            Decimal(approval.entry_price)
+            if approval.entry_price is not None
+            else SizedOrder.model_validate(recommendation.final_order).reference_price
+        )
         try:
             found = broker.find_order(
                 client_order_id(row.id), submitted_on=row.as_of, reference_price=reference

@@ -48,14 +48,22 @@ from bullpit.data.prices import get_market_context
 from bullpit.domain import ExitStyle
 from bullpit.errors import BrokerRejected, DataUnavailable, LookaheadViolation, QuotaExhausted
 from bullpit.eval.baselines import Policy, always_buy, fixed_recommendation, ma_rule
-from bullpit.journal.models import ApprovalRecord, Request, TradeRecord, trade_fields, trade_record
+from bullpit.journal.models import (
+    ApprovalRecord,
+    Request,
+    TradeRecord,
+    decision_from_row,
+    trade_fields,
+    trade_record,
+)
 from bullpit.llm.gateway import CompletionFn, litellm_completion
 from bullpit.llm.schemas import Signal
 from bullpit.logging import get_logger
 from bullpit.report.builder import market_context, report_node
 from bullpit.report.model import MarketContext
 from bullpit.request_check import request_check_node
-from bullpit.risk.rules import shrink, stage_a
+from bullpit.risk.rules import stage_a
+from bullpit.risk.sizing import build_order
 from bullpit.state import RequestState
 from bullpit.tools.indicators import Indicators, compute_indicators
 
@@ -285,26 +293,39 @@ def _route_after_approval(state: RequestState) -> str:
 
 
 def _execute_node(state: RequestState, *, deps: Deps, wiring: ApprovalWiring) -> dict[str, object]:
-    """Places the bracket order for an approved buy, but only if the same approval
-    is committed in the journal (dev-plan sec6.1), then records the trade and
+    """Places the bracket order for an approved buy, built from the approval
+    committed in the journal and only if that row exists and says approved
+    (dev-plan sec6.1; M11.1-FR-18, D-M11.1-10), then records the trade and
     completes the request in one transaction (M8-FR-7, FR-8). Submitting is
     idempotent, so re-running this node after a crash places at most one order."""
     if state.approval is None or state.sized_order is None:
         raise ValueError("execute ran before an approval")
     with deps.sessions() as session:
-        recorded = session.scalars(
+        approval_row = session.scalars(
             select(ApprovalRecord).where(ApprovalRecord.request_id == state.request_id)
         ).one_or_none()
-    if (
-        recorded is None
-        or recorded.decision != "approved"
-        or recorded.approved_shares != state.approval.approved_shares
-    ):
+    if approval_row is None or approval_row.decision != "approved":
         raise BrokerRejected("no recorded owner approval for this order")
+    recorded = decision_from_row(approval_row)
+    if recorded.entry_price is None or recorded.stop_loss is None or recorded.take_profit is None:
+        raise BrokerRejected("the recorded approval has no order to place")
 
-    order, _ = shrink(state.sized_order, recorded.approved_shares)
+    plan = state.sized_order
+    order = build_order(
+        plan.ticker,
+        recorded.approved_shares,
+        reference=recorded.entry_price,
+        stop=recorded.stop_loss,
+        take_profit=recorded.take_profit,
+        exit_style=plan.exit_style,
+        limit=plan.limit,
+        limit_shares=plan.limit_shares,
+    )
     trade = wiring.broker.submit_bracket_order(
-        order, client_order_id=client_order_id(state.request_id), submitted_on=state.as_of
+        order,
+        client_order_id=client_order_id(state.request_id),
+        submitted_on=state.as_of,
+        limit_price=recorded.limit_price if recorded.order_type == "limit" else None,
     )
     with deps.sessions() as session:
         row = session.scalars(
