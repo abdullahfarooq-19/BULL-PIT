@@ -4,8 +4,10 @@ every number a reader sees is traceable, and market context."""
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
@@ -280,3 +282,90 @@ def test_market_context(
     assert (context.spy_sma_200 is None) == (above is None)
     if above is None and label is None:
         assert context.explanation == "Market context not available."
+
+
+_SUMMARIES = ["technical", "fundamentals", "sentiment"]
+
+
+def _live(state: RequestState) -> RequestState:
+    return state.model_copy(update={"mode": "live"})
+
+
+def _technical_failed(state: RequestState) -> RequestState:
+    assert state.technical_signal is not None
+    signal = state.technical_signal.model_copy(
+        update={
+            "direction": "neutral",
+            "confidence": 0.0,
+            "evidence": [],
+            "flagged": True,
+            "note": "analyst failed: boom",
+        }
+    )
+    return state.model_copy(update={"technical_signal": signal})
+
+
+@pytest.mark.parametrize(
+    ("kind", "live", "failed", "summaries", "turns"),
+    [
+        ("buy", True, False, _SUMMARIES, True),
+        ("trader_no_trade", True, False, _SUMMARIES, True),
+        ("weak", True, False, _SUMMARIES, False),
+        ("buy", True, True, ["fundamentals", "sentiment"], True),
+        ("buy", False, False, None, False),
+        ("rejected", True, False, None, False),
+    ],
+)
+def test_report_modes(
+    kind: str, live: bool, failed: bool, summaries: list[str] | None, turns: bool
+) -> None:
+    """Live reports carry the analyst paragraphs, the board score and the debate's
+    turns; a failed analyst gets no paragraph; backtest and rejected reports carry
+    none of them (M11.1-AC-1, AC-3)."""
+    state = _state(kind)
+    state = _technical_failed(state) if failed else state
+    state = _live(state) if live else state
+
+    report = _report(state)
+
+    assert (
+        None if report.analyst_summaries is None else list(report.analyst_summaries)
+    ) == summaries
+    if summaries is None:
+        assert report.board_score is None
+    else:
+        assert state.board is not None and report.board_score == state.board.score
+        assert report.analyst_summaries is not None
+        assert report.analyst_summaries.get("fundamentals") == (
+            "Fundamentals: neutral with confidence 0.40. See the facts below."
+        )
+    assert (report.debate_turns is not None) == turns
+    if turns:
+        assert report.debate_turns is not None
+        assert [(t.side, t.round) for t in report.debate_turns] == [
+            ("bull", 1),
+            ("bear", 1),
+            ("bull", 2),
+            ("bear", 2),
+        ]
+        first = report.debate_turns[0]
+        assert (first.claims[0].text, first.claims[0].evidence_ids) == ("A claim", ["T1"])
+        assert (first.claims[0].unsupported, first.conviction) == (False, 0.7)
+        assert report.debate_turns[2].concessions == ["RSI is high"]
+
+
+def test_m8_report_json_still_loads() -> None:
+    """A report stored by M8 (captured from its unchanged model) validates, with
+    every M11.1 field unset (M11.1-AC-17d)."""
+    stored = json.loads(
+        (Path(__file__).parent.parent / "fixtures" / "reports" / "m8_buy_report.json").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    report = Report.model_validate(stored)
+
+    assert (report.ticker, report.outcome, report.order is not None) == ("AAPL", "buy", True)
+    assert report.analyst_summaries is None
+    assert report.board_score is None
+    assert report.debate_turns is None

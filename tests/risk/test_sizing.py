@@ -11,8 +11,8 @@ from hypothesis import assume, given
 from hypothesis import settings as hyp_settings
 from hypothesis import strategies as st
 
-from bullpit.domain import ExitStyle, SizeLimit
-from bullpit.risk.sizing import build_order, exit_prices, share_limits
+from bullpit.domain import ExitStyle, SizedOrder, SizeLimit
+from bullpit.risk.sizing import build_order, exit_prices, reprice, share_limits
 
 _EXIT_STOP_ATR: dict[ExitStyle, Decimal] = {
     "tight": Decimal("1.5"),
@@ -208,3 +208,52 @@ class TestHeldValueAndTieBreak:
         assert limits == {"target": 10, "risk": 50, "cap": 10, "cash": 1000}
         _, limit = _select(limits)
         assert limit == "target"
+
+
+def _plan(reference: str = "182", stop: str = "174", target: str = "194") -> SizedOrder:
+    return build_order(
+        "AAPL",
+        32,
+        reference=Decimal(reference),
+        stop=Decimal(stop),
+        take_profit=Decimal(target),
+        exit_style="normal",
+        limit="target",
+        limit_shares={"target": 32, "risk": 125, "cap": 54, "cash": 527},
+    )
+
+
+class TestReprice:
+    def test_reprice(self) -> None:
+        """The architecture's AAPL plan (182, 174, 194) moved to an entry of 190."""
+        moved = reprice(_plan(), Decimal("190"))
+        assert moved is not None
+        assert (moved.reference_price, moved.stop_loss, moved.take_profit) == (
+            Decimal("190"),
+            Decimal("182"),
+            Decimal("202"),
+        )
+        assert moved.cost == Decimal("6080")
+        assert moved.max_loss == Decimal("256")
+        assert moved.max_gain == Decimal("384")
+        assert (moved.shares, moved.limit, moved.limit_shares) == (
+            32,
+            "target",
+            _plan().limit_shares,
+        )
+
+    def test_rounds_to_the_cent(self) -> None:
+        moved = reprice(_plan("100", "98.33", "102.5"), Decimal("50.005"))
+        assert moved is not None
+        assert (moved.stop_loss, moved.take_profit) == (Decimal("48.34"), Decimal("52.51"))
+
+    def test_stop_at_or_below_zero_is_refused(self) -> None:
+        assert reprice(_plan(), Decimal("8")) is None
+        assert reprice(_plan(), Decimal("8.01")) is not None
+
+    @given(entry=st.decimals(min_value="8.01", max_value="5000", places=2))
+    def test_distances_are_kept(self, entry: Decimal) -> None:
+        moved = reprice(_plan(), entry)
+        assert moved is not None
+        assert moved.reference_price - moved.stop_loss == Decimal("8")
+        assert moved.take_profit - moved.reference_price == Decimal("12")

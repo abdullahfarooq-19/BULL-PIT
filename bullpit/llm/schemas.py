@@ -93,7 +93,9 @@ class RiskReviewReply(BaseModel):
 
 class ReportProse(BaseModel):
     """Report writer LLM reply (M5-FR-5): the plain-language parts only. The
-    four debate fields are empty strings when there was no debate."""
+    four debate fields are empty strings when there was no debate. The three
+    analyst summaries are asked for in live mode only (M11.1-FR-3) and stay empty
+    for an analyst that wasn't asked about."""
 
     summary: str
     strongest_bull: str
@@ -101,3 +103,14 @@ class ReportProse(BaseModel):
     bull_conceded: str
     unresolved: str
     would_change_view: str
+    technical_summary: str = ""
+    fundamentals_summary: str = ""
+    sentiment_summary: str = ""
+
+
+class DebateNarrativeReply(BaseModel):
+    """Debate narrative LLM reply (M11.1-FR-4): a paragraph per round, in order,
+    and how the debate led to the trader's decision."""
+
+    rounds: list[str]
+    conclusion: str

@@ -20,6 +20,7 @@ Run each with `uv run python scripts/spikes/<name>.py`.
 | `yfinance_check.py` | Daily bars for AAPL, SPY, `^VIX` from 2024-07-01; version and `auto_adjust` default (A16) | No |
 | `alpaca_readonly.py` | News depth and rate limits, asset fields, backup price bars, account cash/equity (A10-A13) | No |
 | `alpaca_bracket.py` | Bracket order rules: rejections, whole-market fill, overnight leg persistence, idempotent `client_order_id` (A7-A9) | `place`/`inspect`/`close` steps: yes |
+| `alpaca_limit_entry.py` | M11.1: a GTC limit-entry bracket is accepted, reads back as pending, cancels cleanly; invalid leg prices rejected (ADR-0008) | No |
 
 `alpaca_bracket.py` only acts on `--confirm`; without it, it prints its plan
 and touches nothing.

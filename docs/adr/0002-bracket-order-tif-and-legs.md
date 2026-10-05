@@ -46,7 +46,7 @@ Full raw findings: [`findings.md`](../milestones/M0-foundations/findings.md)
 - **Leg price validation is symmetric and immediate.** Alpaca rejects a
   bracket at submission time if `take_profit.limit_price <=
   stop_loss.stop_price`, regardless of which side of the current price
-  either one is on. `bullpit/risk/exits.py`'s ATR-based stop and target
+  either one is on. `bullpit/risk/sizing.py`'s ATR-based stop and target
   (Part 11) already keep target above stop by construction, so no
   separate pre-check is needed before submission — but the broker's
   rejection message must still be surfaced clearly if it ever fires (a

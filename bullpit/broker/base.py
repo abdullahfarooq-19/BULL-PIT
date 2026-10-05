@@ -1,8 +1,9 @@
 """Broker interfaces (dev-plan.md D4; M6 specs-plan D-M6-2).
 
 `Broker` is the read side the request check needs. `OrderBroker` adds the
-order side the simulated broker implements in M6; the Alpaca write side
-joins it in M8, not before (CLAUDE.md: no speculative code).
+order side the simulated broker implements in M6. `AlpacaBroker` (M8) has
+`submit_bracket_order` but not `get_order`: a `Trade` needs the report's
+reference price, which only the journal holds (M8 specs-plan R6).
 """
 
 from __future__ import annotations

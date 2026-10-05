@@ -100,6 +100,15 @@ class Settings(BaseSettings):
     baseline_exit_style: ExitStyle = "normal"
     eval_calibration_bins: int = 5
 
+    # --- Live mode (M8) -----------------------------------------------------
+    approval_staleness_pct: Decimal = Decimal("0.02")
+    api_port: int = 8000
+    checkpoint_db_path: Path = Path("checkpoints.db")
+    results_dir: Path = Path("docs/results")
+
+    # --- Report explanations and the order box (M11.1) ---------------------
+    report_paragraph_max_words: int = 110
+
     # --- LLM gateway (M2) -------------------------------------------------
     llm_reasoning_effort_small: str = "low"
     llm_reasoning_effort_large: str = "low"

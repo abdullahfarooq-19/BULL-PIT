@@ -15,7 +15,7 @@ import secrets
 from collections.abc import Callable, Sequence
 from datetime import date, timedelta
 from decimal import Decimal
-from typing import Any, Literal, cast
+from typing import Literal, cast
 
 import structlog
 from langgraph.graph.state import CompiledStateGraph
@@ -34,12 +34,15 @@ from bullpit.errors import ConfigError, LLMUnavailable, QuotaExhausted
 from bullpit.eval.baselines import Policy, bullpit_wanted_buy
 from bullpit.graph import Deps, build_graph
 from bullpit.journal.models import (
-    ApprovalRecord,
     BacktestRun,
     EquitySnapshot,
     RecommendationRecord,
     Request,
     TradeRecord,
+    approval_record,
+    trade_fields,
+    trade_from_row,
+    trade_record,
 )
 from bullpit.llm.gateway import CompletionFn, litellm_completion
 from bullpit.risk.rules import loss_warning
@@ -280,46 +283,6 @@ def _mark(
         session.commit()
 
 
-def _decimal(value: str | None) -> Decimal | None:
-    return None if value is None else Decimal(value)
-
-
-def trade_from_row(row: TradeRecord) -> Trade:
-    return Trade.model_validate(
-        {
-            "client_order_id": row.client_order_id,
-            "ticker": row.ticker,
-            "submitted_on": row.submitted_on,
-            "shares": row.shares,
-            "reference_price": Decimal(row.reference_price),
-            "stop_loss": Decimal(row.stop_loss),
-            "take_profit": Decimal(row.take_profit),
-            "status": row.status,
-            "entry_date": row.entry_date,
-            "entry_price": _decimal(row.entry_price),
-            "exit_date": row.exit_date,
-            "exit_price": _decimal(row.exit_price),
-            "exit_reason": row.exit_reason,
-            "cancel_reason": row.cancel_reason,
-        }
-    )
-
-
-def _trade_fields(trade: Trade) -> dict[str, Any]:
-    """The `trades` columns a broker `Trade` fills; money as `Decimal` strings."""
-    return {
-        "shares": trade.shares,
-        "status": trade.status,
-        "entry_date": trade.entry_date,
-        "entry_price": None if trade.entry_price is None else str(trade.entry_price),
-        "exit_date": trade.exit_date,
-        "exit_price": None if trade.exit_price is None else str(trade.exit_price),
-        "exit_reason": trade.exit_reason,
-        "cancel_reason": trade.cancel_reason,
-        "pnl": None if trade.pnl is None else str(trade.pnl),
-    }
-
-
 def _session_bar(ticker: str, day: date, settings: Settings) -> tuple[Bar, float]:
     """`day`'s bar and split ratio, read through the date guard at `as_of = day`
     (M6-NFR-5). A missing bar raises `DataUnavailable`."""
@@ -429,35 +392,18 @@ def _run_week(
             add_request_rows(session, row, result=result, error=None, settings=settings)
         for request_id, decision in approvals.items():
             session.add(
-                ApprovalRecord(
-                    request_id=request_id,
-                    decision=decision.decision,
-                    recommended_shares=decision.recommended_shares,
-                    approved_shares=decision.approved_shares,
-                    decided_by=decision.decided_by,
-                    decided_at=session_close(day).replace(tzinfo=None),
+                approval_record(
+                    request_id, decision, decided_at=session_close(day).replace(tzinfo=None)
                 )
             )
         for request_id, trade in submitted.items():
-            session.add(
-                TradeRecord(
-                    request_id=request_id,
-                    run_id=run.id,
-                    client_order_id=trade.client_order_id,
-                    ticker=trade.ticker,
-                    submitted_on=trade.submitted_on,
-                    reference_price=str(trade.reference_price),
-                    stop_loss=str(trade.stop_loss),
-                    take_profit=str(trade.take_profit),
-                    **_trade_fields(trade),
-                )
-            )
+            session.add(trade_record(request_id, trade, run_id=run.id))
         session.flush()
         for trade in changed.values():
             record = session.scalars(
                 select(TradeRecord).where(TradeRecord.client_order_id == trade.client_order_id)
             ).one()
-            for column, value in _trade_fields(trade).items():
+            for column, value in trade_fields(trade).items():
                 setattr(record, column, value)
         checkpoint = session.get(BacktestRun, run.id)
         if checkpoint is None:  # pragma: no cover - the run was loaded at the start

@@ -1,0 +1,164 @@
+{
+  "request_id": "20241018-AAPL-test",
+  "ticker": "AAPL",
+  "company_name": "Apple Inc.",
+  "mode": "backtest",
+  "as_of": "2024-10-18",
+  "generated_at": "2024-10-18T21:00:00Z",
+  "outcome": "buy",
+  "confidence": 0.62,
+  "summary": "Buy 32 shares of AAPL: the trader's recommendation passed the risk checks.",
+  "reason": null,
+  "reason_detail": null,
+  "order": {
+    "ticker": "AAPL",
+    "shares": 32,
+    "reference_price": "182",
+    "stop_loss": "174",
+    "take_profit": "194",
+    "exit_style": "normal",
+    "cost": "5824",
+    "max_loss": "256",
+    "max_gain": "384",
+    "limit": "target",
+    "limit_shares": {
+      "target": 32,
+      "risk": 125,
+      "cap": 54,
+      "cash": 527
+    }
+  },
+  "order_pct_of_equity": "5.82400",
+  "signals": [
+    {
+      "ticker": "AAPL",
+      "analyst": "technical",
+      "direction": "bullish",
+      "confidence": 0.6,
+      "evidence": [
+        {
+          "id": "T1",
+          "fact": "Technical fact 1"
+        },
+        {
+          "id": "T2",
+          "fact": "Technical fact 2"
+        },
+        {
+          "id": "T3",
+          "fact": "Technical fact 3"
+        },
+        {
+          "id": "T4",
+          "fact": "Technical fact 4"
+        },
+        {
+          "id": "T5",
+          "fact": "Technical fact 5"
+        },
+        {
+          "id": "T6",
+          "fact": "Technical fact 6"
+        }
+      ],
+      "flagged": false,
+      "note": null
+    },
+    {
+      "ticker": "AAPL",
+      "analyst": "fundamentals",
+      "direction": "neutral",
+      "confidence": 0.4,
+      "evidence": [
+        {
+          "id": "F1",
+          "fact": "Fundamentals fact 1"
+        },
+        {
+          "id": "F2",
+          "fact": "Fundamentals fact 2"
+        },
+        {
+          "id": "F3",
+          "fact": "Fundamentals fact 3"
+        },
+        {
+          "id": "F4",
+          "fact": "Fundamentals fact 4"
+        },
+        {
+          "id": "F5",
+          "fact": "Fundamentals fact 5"
+        }
+      ],
+      "flagged": false,
+      "note": null
+    },
+    {
+      "ticker": "AAPL",
+      "analyst": "sentiment",
+      "direction": "bearish",
+      "confidence": 0.5,
+      "evidence": [
+        {
+          "id": "S1",
+          "fact": "Sentiment fact 1"
+        },
+        {
+          "id": "S2",
+          "fact": "Sentiment fact 2"
+        },
+        {
+          "id": "S3",
+          "fact": "Sentiment fact 3"
+        }
+      ],
+      "flagged": false,
+      "note": null
+    }
+  ],
+  "debate": {
+    "strongest_bull": "The bull's case rests on T1.",
+    "strongest_bear": "The bear's case rests on T1.",
+    "bull_conceded": "The bull made concessions during the debate.",
+    "unresolved": "See the debate transcript.",
+    "bull_conviction": 0.7,
+    "bear_conviction": 0.6,
+    "unsupported_points": 0
+  },
+  "attempts": [
+    {
+      "number": 1,
+      "action": "buy",
+      "target_weight": "0.06",
+      "exit_style": "normal",
+      "confidence": 0.62,
+      "shares": 32,
+      "blocked_reason": null,
+      "review_decision": "approve",
+      "review_reason": "Size is fine, RSI [?] and [?] stop.",
+      "review_clamped": false
+    }
+  ],
+  "loss_warning": null,
+  "would_change_view": "A close below $174.00 (the stop-loss).",
+  "market": {
+    "spy_close": 100.0,
+    "spy_sma_200": 100.0,
+    "spy_above": false,
+    "vix_close": 20.0,
+    "vix_label": "normal",
+    "explanation": "The broad market is in a downtrend with normal volatility."
+  },
+  "data_notes": {
+    "models": [
+      "openai/gpt-oss-20b"
+    ],
+    "news_headlines": 3,
+    "filing_form": null,
+    "filing_date": null,
+    "price_source": "yfinance",
+    "warnings": []
+  },
+  "prose_source": "fallback"
+}

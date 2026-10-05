@@ -8,10 +8,14 @@ milestones extend `requests` and add their own tables against the same
 from __future__ import annotations
 
 from datetime import date, datetime
+from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import JSON, ForeignKey, Index, UniqueConstraint, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+
+from bullpit.approval.gate import ApprovalDecision
+from bullpit.domain import Trade
 
 
 class Base(DeclarativeBase):
@@ -21,8 +25,8 @@ class Base(DeclarativeBase):
 class Request(Base):
     """One research/trading request (M2 specs-plan sec2.2; M3-FR-21).
 
-    The partial unique index is the duplicate-request lock (M3-FR-3): at
-    most one `running` row per (ticker, mode).
+    The partial unique index is the duplicate-request lock (M3-FR-3, M8-FR-11):
+    at most one `running` or `awaiting_approval` row per (ticker, mode).
     """
 
     __tablename__ = "requests"
@@ -32,7 +36,7 @@ class Request(Base):
             "ticker",
             "mode",
             unique=True,
-            sqlite_where=text("status = 'running'"),
+            sqlite_where=text("status IN ('running', 'awaiting_approval')"),
         ),
     )
 
@@ -41,7 +45,7 @@ class Request(Base):
     as_of: Mapped[date]
     created_at: Mapped[datetime]
     ticker: Mapped[str]
-    status: Mapped[str]  # running | completed | rejected | failed
+    status: Mapped[str]  # running | awaiting_approval | completed | rejected | failed | expired
     status_reason: Mapped[str | None] = mapped_column(default=None)
     route: Mapped[str | None] = mapped_column(default=None)  # debate | no_trade
     warnings: Mapped[list[str] | None] = mapped_column(JSON, default=None)
@@ -165,8 +169,18 @@ class ApprovalRecord(Base):
     decision: Mapped[str]  # approved | rejected
     recommended_shares: Mapped[int]
     approved_shares: Mapped[int]
-    decided_by: Mapped[str]  # backtest_policy (M8: owner)
-    decided_at: Mapped[datetime]  # simulated: the close of `as_of`
+    decided_by: Mapped[str]  # backtest_policy | owner
+    decided_at: Mapped[datetime]  # backtest: the close of `as_of`; owner: wall-clock UTC
+    latest_price: Mapped[str | None] = mapped_column(default=None)  # the staleness check's price
+    confirmations: Mapped[list[str] | None] = mapped_column(JSON, default=None)
+    # M11.1: what was approved, so the order can be rebuilt from this row (FR-18).
+    order_type: Mapped[str] = mapped_column(default="market", server_default="market")
+    entry_price: Mapped[str | None] = mapped_column(default=None)
+    limit_price: Mapped[str | None] = mapped_column(default=None)
+    stop_loss: Mapped[str | None] = mapped_column(default=None)
+    take_profit: Mapped[str | None] = mapped_column(default=None)
+    seen_price: Mapped[str | None] = mapped_column(default=None)
+    overrides: Mapped[list[str] | None] = mapped_column(JSON, default=None)
 
 
 class TradeRecord(Base):
@@ -194,22 +208,148 @@ class TradeRecord(Base):
     exit_reason: Mapped[str | None] = mapped_column(default=None)
     cancel_reason: Mapped[str | None] = mapped_column(default=None)
     pnl: Mapped[str | None] = mapped_column(default=None)  # (exit - entry) x shares
+    order_id: Mapped[str | None] = mapped_column(default=None)  # Alpaca IDs, live only
+    stop_order_id: Mapped[str | None] = mapped_column(default=None)
+    take_profit_order_id: Mapped[str | None] = mapped_column(default=None)
+    order_type: Mapped[str] = mapped_column(default="market", server_default="market")  # M11.1
+    limit_price: Mapped[str | None] = mapped_column(default=None)
 
 
 class EquitySnapshot(Base):
-    """Account value at a session's close; `cash` includes pending reservations."""
+    """Account value at a session's close; `cash` includes pending reservations.
+    Live rows (`run_id` NULL) hold equity only: Alpaca's history has no cash split."""
 
     __tablename__ = "equity_snapshots"
-    __table_args__ = (UniqueConstraint("run_id", "date", name="uq_equity_snapshots_run_date"),)
+    __table_args__ = (
+        UniqueConstraint("run_id", "date", name="uq_equity_snapshots_run_date"),
+        Index(
+            "uq_equity_snapshots_live_date",
+            "date",
+            unique=True,
+            sqlite_where=text("run_id IS NULL"),
+        ),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     run_id: Mapped[str | None] = mapped_column(
         ForeignKey("backtest_runs.id"), index=True, default=None
     )  # None for live (M8)
     day: Mapped[date] = mapped_column("date")
-    cash: Mapped[str]
-    positions_value: Mapped[str]
+    cash: Mapped[str | None] = mapped_column(default=None)
+    positions_value: Mapped[str | None] = mapped_column(default=None)
     equity: Mapped[str]
+
+
+def _decimal(value: str | None) -> Decimal | None:
+    return None if value is None else Decimal(value)
+
+
+def approval_record(
+    request_id: str, decision: ApprovalDecision, *, decided_at: datetime
+) -> ApprovalRecord:
+    """A new `approvals` row for `decision`; money as `Decimal` strings."""
+    return ApprovalRecord(
+        request_id=request_id,
+        decision=decision.decision,
+        recommended_shares=decision.recommended_shares,
+        approved_shares=decision.approved_shares,
+        decided_by=decision.decided_by,
+        decided_at=decided_at,
+        latest_price=None if decision.latest_price is None else str(decision.latest_price),
+        confirmations=list(decision.confirmations),
+        order_type=decision.order_type,
+        entry_price=None if decision.entry_price is None else str(decision.entry_price),
+        limit_price=None if decision.limit_price is None else str(decision.limit_price),
+        stop_loss=None if decision.stop_loss is None else str(decision.stop_loss),
+        take_profit=None if decision.take_profit is None else str(decision.take_profit),
+        seen_price=None if decision.seen_price is None else str(decision.seen_price),
+        overrides=list(decision.overrides),
+    )
+
+
+def decision_from_row(row: ApprovalRecord) -> ApprovalDecision:
+    """The `ApprovalDecision` an `approvals` row records. Rows from before M11.1
+    read as market orders with no entry or overrides."""
+    return ApprovalDecision.model_validate(
+        {
+            "decision": row.decision,
+            "recommended_shares": row.recommended_shares,
+            "approved_shares": row.approved_shares,
+            "decided_by": row.decided_by,
+            "latest_price": _decimal(row.latest_price),
+            "confirmations": row.confirmations or [],
+            "order_type": row.order_type,
+            "entry_price": _decimal(row.entry_price),
+            "limit_price": _decimal(row.limit_price),
+            "stop_loss": _decimal(row.stop_loss),
+            "take_profit": _decimal(row.take_profit),
+            "seen_price": _decimal(row.seen_price),
+            "overrides": row.overrides or [],
+        }
+    )
+
+
+def trade_from_row(row: TradeRecord) -> Trade:
+    """The broker `Trade` a `trades` row records (backtest and live)."""
+    return Trade.model_validate(
+        {
+            "client_order_id": row.client_order_id,
+            "ticker": row.ticker,
+            "submitted_on": row.submitted_on,
+            "shares": row.shares,
+            "reference_price": Decimal(row.reference_price),
+            "stop_loss": Decimal(row.stop_loss),
+            "take_profit": Decimal(row.take_profit),
+            "status": row.status,
+            "entry_date": row.entry_date,
+            "entry_price": _decimal(row.entry_price),
+            "exit_date": row.exit_date,
+            "exit_price": _decimal(row.exit_price),
+            "exit_reason": row.exit_reason,
+            "cancel_reason": row.cancel_reason,
+            "order_id": row.order_id,
+            "stop_order_id": row.stop_order_id,
+            "take_profit_order_id": row.take_profit_order_id,
+            "order_type": row.order_type,
+            "limit_price": _decimal(row.limit_price),
+        }
+    )
+
+
+def trade_fields(trade: Trade) -> dict[str, Any]:
+    """The `trades` columns a broker `Trade` fills that change over its life;
+    money as `Decimal` strings."""
+    return {
+        "shares": trade.shares,
+        "status": trade.status,
+        "entry_date": trade.entry_date,
+        "entry_price": None if trade.entry_price is None else str(trade.entry_price),
+        "exit_date": trade.exit_date,
+        "exit_price": None if trade.exit_price is None else str(trade.exit_price),
+        "exit_reason": trade.exit_reason,
+        "cancel_reason": trade.cancel_reason,
+        "pnl": None if trade.pnl is None else str(trade.pnl),
+    }
+
+
+def trade_record(request_id: str, trade: Trade, *, run_id: str | None = None) -> TradeRecord:
+    """A new `trades` row for `trade`; `run_id` is `None` for a live trade."""
+    return TradeRecord(
+        request_id=request_id,
+        run_id=run_id,
+        client_order_id=trade.client_order_id,
+        ticker=trade.ticker,
+        submitted_on=trade.submitted_on,
+        reference_price=str(trade.reference_price),
+        stop_loss=str(trade.stop_loss),
+        take_profit=str(trade.take_profit),
+        order_id=trade.order_id,
+        stop_order_id=trade.stop_order_id,
+        take_profit_order_id=trade.take_profit_order_id,
+        order_type=trade.order_type,
+        limit_price=None if trade.limit_price is None else str(trade.limit_price),
+        **trade_fields(trade),
+    )
 
 
 class LLMCall(Base):

@@ -8,7 +8,11 @@ same builder, so only the buy decision differs from Bull Pit.
 
 Dependencies (settings, journal sessions, the broker, the LLM completion
 function) are bound when the graph is built and never stored in state, so
-`RequestState` stays serialisable for M8's checkpointer.
+`RequestState` stays serialisable for the checkpointer.
+
+M8 adds the live tail (M8 specs-plan sec9.3): built with an `ApprovalWiring`, a
+buy in live mode pauses at `approval` for the owner and `execute` places the
+bracket order. Without one, the graph ends at the report as before.
 """
 
 from __future__ import annotations
@@ -19,8 +23,11 @@ from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import interrupt
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from bullpit.agents.brain import choose_route, data_warnings
@@ -32,13 +39,23 @@ from bullpit.agents.signals_board import build_board
 from bullpit.agents.single_agent import single_agent_node
 from bullpit.agents.technical import bars_frame, technical_node
 from bullpit.agents.trader import attempt_update, trader_node
-from bullpit.broker.base import Broker
+from bullpit.approval.gate import ApprovalDecision
+from bullpit.broker.alpaca import AlpacaBroker
+from bullpit.broker.base import Broker, client_order_id
 from bullpit.clock import utc_now
 from bullpit.config import Settings
 from bullpit.data.prices import get_market_context
 from bullpit.domain import ExitStyle
-from bullpit.errors import DataUnavailable, LookaheadViolation, QuotaExhausted
+from bullpit.errors import BrokerRejected, DataUnavailable, LookaheadViolation, QuotaExhausted
 from bullpit.eval.baselines import Policy, always_buy, fixed_recommendation, ma_rule
+from bullpit.journal.models import (
+    ApprovalRecord,
+    Request,
+    TradeRecord,
+    decision_from_row,
+    trade_fields,
+    trade_record,
+)
 from bullpit.llm.gateway import CompletionFn, litellm_completion
 from bullpit.llm.schemas import Signal
 from bullpit.logging import get_logger
@@ -46,6 +63,7 @@ from bullpit.report.builder import market_context, report_node
 from bullpit.report.model import MarketContext
 from bullpit.request_check import request_check_node
 from bullpit.risk.rules import stage_a
+from bullpit.risk.sizing import build_order
 from bullpit.state import RequestState
 from bullpit.tools.indicators import Indicators, compute_indicators
 
@@ -76,6 +94,15 @@ class Deps:
     sessions: sessionmaker[Session]
     broker: Broker
     completion_fn: CompletionFn = field(default=litellm_completion)
+
+
+@dataclass(frozen=True)
+class ApprovalWiring:
+    """What the live tail needs: the checkpointer that holds the paused graph and
+    the broker that places the order (the raw Alpaca broker, M8 R6)."""
+
+    checkpointer: BaseCheckpointSaver[str]
+    broker: AlpacaBroker
 
 
 def _route_after_request_check(state: RequestState) -> list[str] | str:
@@ -246,6 +273,78 @@ def _report_node(state: RequestState, *, deps: Deps) -> dict[str, object]:
     )
 
 
+def _route_after_report(state: RequestState) -> str:
+    """Only a live buy waits for the owner (architecture Part 13)."""
+    return "approval" if state.mode == "live" and state.outcome == "buy" else END
+
+
+def _approval_node(state: RequestState) -> dict[str, object]:
+    """Pauses for the owner's decision. No side effect before `interrupt`:
+    LangGraph re-runs a node from its start on resume (M8 D-M8-3)."""
+    if state.sized_order is None:
+        raise ValueError("approval ran without a sized order")
+    decision = interrupt({"request_id": state.request_id, "max_shares": state.sized_order.shares})
+    return {"approval": ApprovalDecision.model_validate(decision)}
+
+
+def _route_after_approval(state: RequestState) -> str:
+    approved = state.approval is not None and state.approval.decision == "approved"
+    return "execute" if approved else END
+
+
+def _execute_node(state: RequestState, *, deps: Deps, wiring: ApprovalWiring) -> dict[str, object]:
+    """Places the bracket order for an approved buy, built from the approval
+    committed in the journal and only if that row exists and says approved
+    (dev-plan sec6.1; M11.1-FR-18, D-M11.1-10), then records the trade and
+    completes the request in one transaction (M8-FR-7, FR-8). Submitting is
+    idempotent, so re-running this node after a crash places at most one order."""
+    if state.approval is None or state.sized_order is None:
+        raise ValueError("execute ran before an approval")
+    with deps.sessions() as session:
+        approval_row = session.scalars(
+            select(ApprovalRecord).where(ApprovalRecord.request_id == state.request_id)
+        ).one_or_none()
+    if approval_row is None or approval_row.decision != "approved":
+        raise BrokerRejected("no recorded owner approval for this order")
+    recorded = decision_from_row(approval_row)
+    if recorded.entry_price is None or recorded.stop_loss is None or recorded.take_profit is None:
+        raise BrokerRejected("the recorded approval has no order to place")
+
+    plan = state.sized_order
+    order = build_order(
+        plan.ticker,
+        recorded.approved_shares,
+        reference=recorded.entry_price,
+        stop=recorded.stop_loss,
+        take_profit=recorded.take_profit,
+        exit_style=plan.exit_style,
+        limit=plan.limit,
+        limit_shares=plan.limit_shares,
+    )
+    trade = wiring.broker.submit_bracket_order(
+        order,
+        client_order_id=client_order_id(state.request_id),
+        submitted_on=state.as_of,
+        limit_price=recorded.limit_price if recorded.order_type == "limit" else None,
+    )
+    with deps.sessions() as session:
+        row = session.scalars(
+            select(TradeRecord).where(TradeRecord.client_order_id == trade.client_order_id)
+        ).one_or_none()
+        if row is None:
+            session.add(trade_record(state.request_id, trade))
+        else:
+            for column, value in trade_fields(trade).items():
+                setattr(row, column, value)
+        request = session.get(Request, state.request_id)
+        if request is None:  # pragma: no cover - the runner opened the request
+            raise ValueError(f"no requests row for {state.request_id!r}")
+        request.status = "completed"
+        request.finished_at = utc_now().replace(tzinfo=None)
+        session.commit()
+    return {"trade": trade}
+
+
 def _route_after_brain(state: RequestState) -> str:
     return "bull" if state.route == "debate" else "report"
 
@@ -359,9 +458,12 @@ def build_graph(
     *,
     policy: Policy = "bullpit",
     buy_decisions: Mapping[tuple[date, str], bool] | None = None,
+    approval: ApprovalWiring | None = None,
 ) -> CompiledStateGraph[RequestState, None, RequestState, RequestState]:
     """The M6 graph for `bullpit`; any other policy gets the short policy graph.
-    `buy_decisions` (by decision day and ticker) is for `bullpit_fixed` only."""
+    `buy_decisions` (by decision day and ticker) is for `bullpit_fixed` only.
+    `approval` adds the live tail (`approval`, `execute`); `None` is the graph
+    that ends at the report, which backtests and `bullpit request` use."""
     if policy != "bullpit":
         return _build_policy_graph(deps, policy, buy_decisions)
 
@@ -413,6 +515,13 @@ def build_graph(
     graph.add_conditional_edges("trader", _route_after_trader, ["risk_sizing", "report"])
     graph.add_conditional_edges("risk_sizing", _route_after_sizing, ["risk_review", "report"])
     graph.add_conditional_edges("risk_review", _route_after_review, ["trader", "report"])
-    graph.add_edge("report", END)
+    if approval is None:
+        graph.add_edge("report", END)
+        return graph.compile()
 
-    return graph.compile()
+    graph.add_node("approval", _approval_node)
+    graph.add_node("execute", functools.partial(_execute_node, deps=deps, wiring=approval))
+    graph.add_conditional_edges("report", _route_after_report, ["approval", END])
+    graph.add_conditional_edges("approval", _route_after_approval, ["execute", END])
+    graph.add_edge("execute", END)
+    return graph.compile(checkpointer=approval.checkpointer)

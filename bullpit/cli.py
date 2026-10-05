@@ -6,6 +6,7 @@ weekly backtest; `eval` (M7) writes the results page from finished runs.
 
 from __future__ import annotations
 
+import json
 import sys
 from datetime import date
 from decimal import Decimal, InvalidOperation
@@ -13,10 +14,13 @@ from pathlib import Path
 from typing import Annotated, Literal, cast, get_args
 
 import typer
+import uvicorn
 from alembic import command as alembic_command
 from alembic.config import Config as AlembicConfig
+from langgraph.checkpoint.memory import InMemorySaver
 
-from bullpit.broker.alpaca import make_alpaca_broker
+from bullpit.api.app import create_app
+from bullpit.broker.alpaca import AlpacaBroker, make_alpaca_broker
 from bullpit.clock import Clock, LiveClock, SimClock
 from bullpit.config import Settings, get_settings
 from bullpit.doctor import Status, run_all_checks
@@ -27,7 +31,8 @@ from bullpit.journal.db import journal_url, make_engine, make_sessions
 from bullpit.logging import configure_logging
 from bullpit.report.builder import render_markdown
 from bullpit.runners.backtest import RunResult, WeekSummary, run_backtest, start_backtest
-from bullpit.runners.request import run_request
+from bullpit.runners.fill_check import fill_check
+from bullpit.runners.request import PendingAwareBroker, make_checkpointer, run_request
 from bullpit.state import RequestState
 
 # LLM text (M4's debate/report prose) can contain characters outside
@@ -169,8 +174,15 @@ def request(
     broker = make_alpaca_broker(settings)
 
     validated_mode = cast(Literal["live", "backtest"], mode)
+    live = validated_mode == "live"
     result = run_request(
-        ticker, validated_mode, clock, settings=settings, sessions=sessions, broker=broker
+        ticker,
+        validated_mode,
+        clock,
+        settings=settings,
+        sessions=sessions,
+        broker=PendingAwareBroker(broker, sessions) if live else broker,
+        expiry_broker=broker if live else None,
     )
 
     typer.echo(f"request_id: {result.request_id}")
@@ -308,7 +320,9 @@ def backtest(
 @app.command(name="eval")
 def eval_command(
     runs: Annotated[str, typer.Option("--runs", help="Comma-separated completed run IDs")],
-    out: Annotated[Path, typer.Option("--out", help="Output directory")] = Path("docs/results"),
+    out: Annotated[
+        Path | None, typer.Option("--out", help="Output directory (default: RESULTS_DIR)")
+    ] = None,
 ) -> None:
     """Write results.md and the charts for finished backtest runs."""
     try:
@@ -321,7 +335,9 @@ def eval_command(
     _upgrade_journal_schema(settings)
     sessions = make_sessions(make_engine(journal_url(settings)))
     try:
-        path = evaluate(runs.split(","), out, settings=settings, sessions=sessions)
+        path = evaluate(
+            runs.split(","), out or settings.results_dir, settings=settings, sessions=sessions
+        )
     except ConfigError as exc:
         typer.echo(str(exc))
         raise typer.Exit(code=2) from None
@@ -329,6 +345,82 @@ def eval_command(
         typer.echo(f"Error: {exc}")
         raise typer.Exit(code=1) from None
     typer.echo(f"wrote {path}")
+
+
+@app.command(name="fill-check")
+def fill_check_command() -> None:
+    """Record what Alpaca did with live orders, and the account's daily equity."""
+    try:
+        settings = get_settings()
+    except BullPitError as exc:
+        typer.echo(f"config          FAIL    {exc}")
+        raise typer.Exit(code=1) from None
+
+    configure_logging(settings)
+    _upgrade_journal_schema(settings)
+    sessions = make_sessions(make_engine(journal_url(settings)))
+    try:
+        result = fill_check(
+            broker=make_alpaca_broker(settings),
+            sessions=sessions,
+            as_of=LiveClock().as_of(),
+            settings=settings,
+        )
+    except BullPitError as exc:
+        typer.echo(f"Error: {exc}")
+        raise typer.Exit(code=1) from None
+
+    for trade in result.changed:
+        typer.echo(f"{trade.ticker} {trade.client_order_id}: {trade.status} P&L {trade.pnl}")
+    typer.echo(
+        f"trades updated: {len(result.changed)}  equity snapshots written: {result.snapshots}"
+    )
+    for warning in result.warnings:
+        typer.echo(f"warning: {warning}")
+
+
+# Localhost only, fixed in code and not a setting: the API has no auth (M8 D-M8-13).
+_API_HOST = "127.0.0.1"
+
+
+@app.command()
+def serve() -> None:
+    """Run the API for the dashboard on 127.0.0.1 (one process, one worker)."""
+    try:
+        settings = get_settings()
+    except BullPitError as exc:
+        typer.echo(f"config          FAIL    {exc}")
+        raise typer.Exit(code=1) from None
+
+    configure_logging(settings)
+    _upgrade_journal_schema(settings)
+    try:
+        api = create_app(
+            settings,
+            broker=make_alpaca_broker(settings),
+            sessions=make_sessions(make_engine(journal_url(settings))),
+            checkpointer=make_checkpointer(settings),
+        )
+    except BullPitError as exc:
+        typer.echo(f"Error: {exc}")
+        raise typer.Exit(code=1) from None
+    uvicorn.run(api, host=_API_HOST, port=settings.api_port, workers=1)
+
+
+@app.command()
+def openapi(out: Annotated[Path, typer.Option("--out", help="File to write")]) -> None:
+    """Write the API's OpenAPI schema (UTF-8, LF line endings), for the web app's types."""
+    # The schema depends on the routes only; none of these stand-ins is ever called,
+    # so no keys are needed (CI runs this without any).
+    api = create_app(
+        Settings(_env_file=None),
+        broker=cast(AlpacaBroker, None),
+        sessions=make_sessions(make_engine("sqlite://")),
+        checkpointer=InMemorySaver(),
+    )
+    schema = json.dumps(api.openapi(), indent=2, ensure_ascii=False)
+    out.write_text(schema + "\n", encoding="utf-8", newline="\n")
+    typer.echo(f"wrote {out}")
 
 
 if __name__ == "__main__":

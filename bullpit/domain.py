@@ -11,7 +11,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, computed_field
 
 
 class Bar(BaseModel, frozen=True):
@@ -67,7 +67,8 @@ class SizedOrder(BaseModel, frozen=True):
 # --- Execution (M6; architecture Part 14) -----------------------------------
 
 TradeStatus = Literal["pending", "open", "closed", "cancelled", "open_at_end"]
-ExitReason = Literal["stop", "target", "window_end"]  # M8 adds "manual"
+ExitReason = Literal["stop", "target", "window_end", "manual"]
+OrderType = Literal["market", "limit"]
 
 
 class Trade(BaseModel, frozen=True):
@@ -87,7 +88,13 @@ class Trade(BaseModel, frozen=True):
     exit_price: Decimal | None = None  # the last close for open_at_end
     exit_reason: ExitReason | None = None
     cancel_reason: str | None = None
+    order_id: str | None = None  # Alpaca IDs; None in the simulated broker (M8 D-M8-20)
+    stop_order_id: str | None = None
+    take_profit_order_id: str | None = None
+    order_type: OrderType = "market"  # M11.1: a limit trade waits at `limit_price`
+    limit_price: Decimal | None = None
 
+    @computed_field  # type: ignore[prop-decorator]
     @property
     def pnl(self) -> Decimal | None:
         """(exit - entry) x shares, once closed or marked at the window end."""

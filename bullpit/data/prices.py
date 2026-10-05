@@ -15,6 +15,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from typing import Literal, cast
 
 import pandas as pd
@@ -22,7 +23,12 @@ import yfinance as yf
 from alpaca.data.enums import Adjustment, CorporateActionsType, DataFeed
 from alpaca.data.models.bars import BarSet
 from alpaca.data.models.corporate_actions import CorporateActionsSet, ForwardSplit, ReverseSplit
-from alpaca.data.requests import CorporateActionsRequest, StockBarsRequest
+from alpaca.data.models.trades import Trade
+from alpaca.data.requests import (
+    CorporateActionsRequest,
+    StockBarsRequest,
+    StockLatestTradeRequest,
+)
 from alpaca.data.timeframe import TimeFrame
 
 from bullpit.broker.clients import make_data_clients
@@ -232,3 +238,19 @@ def get_market_context(as_of: date, sessions: int, *, settings: Settings) -> Mar
         spy=get_prices("SPY", as_of, sessions, settings=settings),
         vix=get_prices("^VIX", as_of, sessions, settings=settings),
     )
+
+
+def latest_price(symbol: str, *, settings: Settings) -> Decimal:
+    """The price of the latest trade on Alpaca's free IEX feed (M8-FR-12).
+
+    Live only: the approval's staleness check is its one user. It is a moment in
+    time, not a dated bar, so it never reaches an agent or a backtest and the
+    date guard doesn't apply.
+    """
+    try:
+        clients = make_data_clients(settings)
+        request = StockLatestTradeRequest(symbol_or_symbols=symbol, feed=DataFeed.IEX)
+        trades = cast(dict[str, Trade], clients.stock_history.get_stock_latest_trade(request))
+        return Decimal(str(trades[symbol].price))
+    except Exception as exc:
+        raise DataUnavailable(f"Alpaca latest trade failed for {symbol}") from exc

@@ -1,0 +1,5 @@
+{
+  "status_code": 422,
+  "message": "{\"code\":42210000,\"message\":\"client_order_id must be unique\"}",
+  "repr": "APIError('{\"code\":42210000,\"message\":\"client_order_id must be unique\"}')"
+}

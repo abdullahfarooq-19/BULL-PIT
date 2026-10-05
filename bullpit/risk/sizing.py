@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from decimal import ROUND_FLOOR, ROUND_HALF_UP, Decimal
 
-from bullpit.domain import ExitStyle, SizedOrder, SizeLimit
+from bullpit.domain import Account, ExitStyle, SizedOrder, SizeLimit, Trade
 
 _CENT = Decimal("0.01")
 
@@ -34,6 +34,34 @@ def exit_prices(
     return stop, take_profit
 
 
+def cap_shares(equity: Decimal, held_value: Decimal, reference: Decimal, cap_pct: Decimal) -> int:
+    """Shares that keep the position within the per-stock cap (limit 3)."""
+    return floor_shares((cap_pct * equity - held_value) / reference)
+
+
+def cash_shares(cash: Decimal, reference: Decimal) -> int:
+    """Shares that cash alone can pay for (limit 4)."""
+    return floor_shares(cash / reference)
+
+
+def pending_cost(pending: list[Trade], ticker: str | None = None) -> Decimal:
+    """What orders that haven't filled will cost, at their reference price as the
+    simulated broker reserves it; only `ticker`'s when given."""
+    return sum(
+        (t.shares * t.reference_price for t in pending if ticker in (None, t.ticker)), Decimal(0)
+    )
+
+
+def net_of_pending(
+    account: Account, held_value: Decimal, pending: list[Trade], ticker: str
+) -> tuple[Account, Decimal]:
+    """The account and the position value in `ticker`, net of orders that haven't
+    filled (M8-FR-29): their cost leaves cash, and the ticker's own count as held.
+    Equity is unchanged, since the cash isn't spent yet."""
+    net = Account(cash=account.cash - pending_cost(pending), equity=account.equity)
+    return net, held_value + pending_cost(pending, ticker)
+
+
 def share_limits(
     *,
     reference: Decimal,
@@ -52,9 +80,29 @@ def share_limits(
     return {
         "target": floor_shares(target_weight * equity / reference),
         "risk": floor_shares(risk_pct * equity / risk_per_share),
-        "cap": floor_shares((cap_pct * equity - held_value) / reference),
-        "cash": floor_shares(cash / reference),
+        "cap": cap_shares(equity, held_value, reference, cap_pct),
+        "cash": cash_shares(cash, reference),
     }
+
+
+def reprice(order: SizedOrder, entry: Decimal) -> SizedOrder | None:
+    """The order with its exits moved to a new entry price, keeping the plan's
+    stop and target distances (M11.1-FR-12, D16). `None` if the stop would be at
+    or below zero. `limit` and `limit_shares` stay as the plan's record."""
+    stop = round_cent(entry - (order.reference_price - order.stop_loss))
+    target = round_cent(entry + (order.take_profit - order.reference_price))
+    if stop <= 0:
+        return None
+    return build_order(
+        order.ticker,
+        order.shares,
+        reference=entry,
+        stop=stop,
+        take_profit=target,
+        exit_style=order.exit_style,
+        limit=order.limit,
+        limit_shares=order.limit_shares,
+    )
 
 
 def build_order(

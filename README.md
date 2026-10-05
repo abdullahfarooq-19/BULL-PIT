@@ -74,8 +74,9 @@ Code writes every number. A small model writes only the plain-language
 sentences, and any number or evidence ID it adds that isn't already in the
 report gets the text rejected and rewritten once, then replaced by plain
 template sentences. The report is also saved to the journal (`reports`
-table) as JSON. Live approval and order placement arrive in M8; backtests
-(below) approve and place simulated orders themselves.
+table) as JSON. `bullpit request` never places an order. Live approval and orders go
+through the dashboard (below); backtests approve and place simulated orders
+themselves.
 
 ### Running a backtest
 
@@ -129,6 +130,56 @@ by setting `LLM_PROVIDER=openrouter`, both model variables to that name and
 both `LLM_*_MODEL_CUTOFF` variables to `2026-08-14`; the pinned gpt-oss models on
 Groq remain the default. Results: [`docs/results/results.md`](docs/results/results.md).
 
+## Live mode: the dashboard
+
+The dashboard is the one way to a live order. It needs two processes, both bound
+to `127.0.0.1` only (there is no login, so nothing is exposed):
+
+```bash
+uv run bullpit serve            # the API, on API_PORT (default 8000)
+cd web && npm ci && npm run build && npm run start    # the dashboard, http://127.0.0.1:3000
+```
+
+1. **Start a request.** Type a ticker on the first page (or press `Ctrl K`). The
+   graph runs for about a minute and shows its progress.
+2. **Read the report.** Each analyst has a plain-language paragraph, a lean bar (bearish
+   fills left, bullish fills right, length is its confidence, a failed analyst says it
+   could not run) and every fact it used. The debate is explained round by round, with
+   how it reached its conclusion, the two conviction bars and, on request, every turn.
+   The paragraphs are written by the report writer from code-written facts and pass the
+   same number and evidence-ID check as the rest of the report; they explain the model's
+   stated judgment, they are not a calculation.
+3. **Decide in the order box.** It shows the latest trade price (refreshed about every
+   5 seconds while the tab is visible) and the bracket order to scale. Choose **Buy now**
+   (a market order; the stop and take-profit follow the price you see, keeping the plan's
+   distances) or **Buy at a price** (a good-till-cancelled limit order that waits on
+   Alpaca until the price reaches yours). Lower the share count if you like, then *press
+   and hold* Approve for 1.2 seconds, or Reject. All the order maths is on the API, and
+   it checks again on approval, whatever the page sends: for a market order the price
+   hasn't moved more than 2% from the one you saw (else you confirm or re-run), a loss
+   warning needs a confirmation, cash and the 10% per-stock cap still hold with orders
+   that haven't filled yet counted, and the report is under one trading day old.
+   A report you haven't decided survives an API restart.
+4. **Advanced mode (off by default).** Tick *Edit stop, take-profit and size* to set your
+   own stop and take-profit and a share count above the recommendation. A warning stays
+   on screen. **Your cash is the only hard limit**; going past the 10% cap or the 1% risk
+   limit is allowed after a confirmation that lists each override, and every override is
+   recorded and badged *Override* on History and Trades. The report is not edited: it
+   still describes the original plan.
+5. **The order.** An approved buy becomes one bracket order (entry, stop-loss and
+   take-profit, good till cancelled) on the Alpaca **paper** account, built from the
+   recorded approval. Its ID comes from the request, so sending the approval twice still
+   makes one order. A limit order stays pending until it fills or **you cancel it** (the
+   *Cancel order* button on the report page and on Trades); a filled trade is never
+   touched by the system.
+6. **Fills.** The **Trades** page and `uv run bullpit fill-check` record the entry, the
+   exit and the profit or loss from Alpaca, and any position you close by hand as
+   *manual*. The fill check runs whenever the dashboard opens; there is no scheduler.
+
+The web app's API types are generated from the API's OpenAPI schema
+(`npm run gen:api`, run by CI, which fails if the committed files are stale).
+The equity chart uses TradingView Lightweight Charts.
+
 ## Development commands
 
 ```bash
@@ -150,7 +201,10 @@ checks) run automatically on `git commit` once installed with
   (`https://paper-api.alpaca.markets`), before any network call. There is
   no setting to turn this off.
 - **A person approves every trade.** No live code path places an order
-  without a recorded approval.
+  without a recorded approval, and the order placed is built from that
+  record. Outside the opt-in advanced mode the API refuses to raise the
+  share count; in it, cash is still a hard limit and every override is
+  recorded. The API listens on `127.0.0.1` only.
 - **Secrets stay local.** `.env` is git-ignored; `.env.example` lists the
   variable names with no values; gitleaks scans every commit and every CI
   run for accidentally-committed secrets.
@@ -163,6 +217,7 @@ checks) run automatically on `git commit` once installed with
 ```text
 bull-pit/
 ├── bullpit/            the package: config, errors, logging, cli, broker/, ...
+├── web/                the dashboard: Next.js, TypeScript, Tailwind
 ├── tests/              automated tests (mirrors bullpit/); no network calls
 ├── scripts/spikes/     throwaway scripts that verify external-service assumptions
 ├── docs/
@@ -170,7 +225,7 @@ bull-pit/
 │   ├── dev-plan.md     how it's built: process, milestones, testing policy
 │   ├── adr/            decisions not already fixed by the architecture
 │   └── milestones/     per-milestone specs, plans, task checklists, findings
-└── .github/workflows/  CI: lint, type check, tests, secret scan
+└── .github/workflows/  CI: lint, type check, tests, web build, secret scan
 ```
 
 See [`docs/dev-plan.md` §2.3](docs/dev-plan.md#23-repository-layout) for the
