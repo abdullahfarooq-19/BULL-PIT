@@ -67,6 +67,7 @@ from bullpit.journal.models import (
     TradeRecord,
     approval_record,
     decision_from_row,
+    trade_fields,
     trade_from_row,
 )
 from bullpit.journal.models import Request as RequestRow
@@ -127,8 +128,16 @@ def _utc(moment: datetime) -> datetime:
     return moment.replace(tzinfo=UTC)
 
 
-def _trade_out(row: TradeRecord) -> TradeOut:
-    return TradeOut(**trade_from_row(row).model_dump(), request_id=row.request_id)
+def _trade_out(row: TradeRecord, overrides: list[str] | None = None) -> TradeOut:
+    return TradeOut(
+        **trade_from_row(row).model_dump(), request_id=row.request_id, overrides=overrides or []
+    )
+
+
+def _overrides(session: Session) -> dict[str, list[str]]:
+    """Each request's approval overrides, for the trades' badges."""
+    found = session.execute(select(ApprovalRecord.request_id, ApprovalRecord.overrides)).all()
+    return {request_id: overrides or [] for request_id, overrides in found}
 
 
 def _summary(row: RequestRow, approval: ApprovalRecord | None) -> dict[str, Any]:
@@ -142,6 +151,10 @@ def _summary(row: RequestRow, approval: ApprovalRecord | None) -> dict[str, Any]
         "created_at": _utc(row.created_at),
         "expires_at": expires_at(row.as_of) if row.status == "awaiting_approval" else None,
         "decision": None if approval is None else approval.decision,
+        "order_type": None
+        if approval is None or approval.decision != "approved"
+        else approval.order_type,
+        "overrides": [] if approval is None else approval.overrides or [],
     }
 
 
@@ -437,7 +450,9 @@ def create_app(
                 stage=stage,
                 debate_round=debate_round,
                 approval=None if approval is None else decision_from_row(approval),
-                trade=None if trade is None else _trade_out(trade),
+                trade=None
+                if trade is None
+                else _trade_out(trade, None if approval is None else approval.overrides),
             )
 
     @app.get(
@@ -464,7 +479,11 @@ def create_app(
         trade = (
             None
             if state.trade is None
-            else TradeOut(**state.trade.model_dump(), request_id=request_id)
+            else TradeOut(
+                **state.trade.model_dump(),
+                request_id=request_id,
+                overrides=list(decision.overrides),
+            )
         )
         return ApprovalResult(approval=decision, trade=trade)
 
@@ -615,7 +634,59 @@ def create_app(
                 .where(TradeRecord.run_id.is_(None))
                 .order_by(TradeRecord.id.desc())
             ).all()
-            return [_trade_out(row) for row in rows]
+            overrides = _overrides(session)
+            return [_trade_out(row, overrides.get(row.request_id)) for row in rows]
+
+    @app.post(
+        "/trades/{request_id}/cancel",
+        response_model=TradeOut,
+        responses={404: {"model": Problem}, 409: {"model": Problem}, 502: {"model": Problem}},
+    )
+    def cancel_trade(request_id: str) -> TradeOut:
+        """Cancels a live trade whose entry is still waiting (M11.1-FR-21). Alpaca is
+        asked, then the order is read again: it may have filled as the cancel crossed."""
+        with fill_check_lock, sessions() as session:
+            row = session.scalars(
+                select(TradeRecord).where(
+                    TradeRecord.request_id == request_id, TradeRecord.run_id.is_(None)
+                )
+            ).one_or_none()
+            if row is None:
+                raise _not_found("trade")
+            if row.status != "pending":
+                raise Refusal(
+                    409,
+                    Problem(
+                        code="not_cancellable",
+                        message=f"This order isn't waiting to fill: the trade is {row.status}.",
+                    ),
+                )
+            trade = trade_from_row(row)
+            try:
+                if trade.order_id is None:
+                    raise BrokerRejected(f"trade {trade.client_order_id} has no Alpaca order ID")
+                broker.cancel_order(trade.order_id)
+                live = broker.get_live_order(trade).trade
+            except BrokerRejected as exc:
+                raise Refusal(502, Problem(code="broker_unavailable", message=str(exc))) from exc
+            if live.status == "cancelled":
+                row.status = "cancelled"
+                row.cancel_reason = "cancelled by owner"
+                session.commit()
+                return _trade_out(row, _overrides(session).get(request_id))
+            for column, value in trade_fields(live).items():  # as the fill check records it
+                setattr(row, column, value)
+            session.commit()
+        raise Refusal(
+            409,
+            Problem(
+                code="not_cancellable",
+                message=(
+                    "The entry had already filled, wholly or in part, so nothing was "
+                    "cancelled. The trade is updated: review it."
+                ),
+            ),
+        )
 
     @app.get("/equity", response_model=list[EquityPoint])
     def list_equity() -> list[EquityPoint]:

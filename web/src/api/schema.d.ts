@@ -107,6 +107,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/trades/{request_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Trade
+         * @description Cancels a live trade whose entry is still waiting (M11.1-FR-21). Alpaca is
+         *     asked, then the order is read again: it may have filled as the cancel crossed.
+         */
+        post: operations["cancel_trade_trades__request_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/equity": {
         parameters: {
             query?: never;
@@ -705,6 +726,10 @@ export interface components {
             expires_at: string | null;
             /** Decision */
             decision: string | null;
+            /** Order Type */
+            order_type: string | null;
+            /** Overrides */
+            overrides: string[];
             /** Stage */
             stage: string;
             /** Debate Round */
@@ -743,6 +768,10 @@ export interface components {
             expires_at: string | null;
             /** Decision */
             decision: string | null;
+            /** Order Type */
+            order_type: string | null;
+            /** Overrides */
+            overrides: string[];
         };
         /** ResultsPage */
         ResultsPage: {
@@ -925,6 +954,8 @@ export interface components {
             limit_price?: string | null;
             /** Request Id */
             request_id: string;
+            /** Overrides */
+            overrides?: string[];
             /**
              * Pnl
              * @description (exit - entry) x shares, once closed or marked at the window end.
@@ -1246,6 +1277,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TradeOut"][];
+                };
+            };
+        };
+    };
+    cancel_trade_trades__request_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TradeOut"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
                 };
             };
         };

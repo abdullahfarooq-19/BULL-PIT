@@ -375,6 +375,76 @@
         }
       }
     },
+    "/trades/{request_id}/cancel": {
+      "post": {
+        "summary": "Cancel Trade",
+        "description": "Cancels a live trade whose entry is still waiting (M11.1-FR-21). Alpaca is\nasked, then the order is read again: it may have filled as the cancel crossed.",
+        "operationId": "cancel_trade_trades__request_id__cancel_post",
+        "parameters": [
+          {
+            "name": "request_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Request Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TradeOut"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Conflict"
+          },
+          "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            },
+            "description": "Bad Gateway"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/equity": {
       "get": {
         "summary": "List Equity",
@@ -2118,6 +2188,24 @@
             ],
             "title": "Decision"
           },
+          "order_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Type"
+          },
+          "overrides": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Overrides"
+          },
           "stage": {
             "type": "string",
             "title": "Stage"
@@ -2165,6 +2253,8 @@
           "created_at",
           "expires_at",
           "decision",
+          "order_type",
+          "overrides",
           "stage",
           "debate_round",
           "approval",
@@ -2253,6 +2343,24 @@
               }
             ],
             "title": "Decision"
+          },
+          "order_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Type"
+          },
+          "overrides": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Overrides"
           }
         },
         "type": "object",
@@ -2265,7 +2373,9 @@
           "outcome",
           "created_at",
           "expires_at",
-          "decision"
+          "decision",
+          "order_type",
+          "overrides"
         ],
         "title": "RequestSummary"
       },
@@ -2824,6 +2934,13 @@
           "request_id": {
             "type": "string",
             "title": "Request Id"
+          },
+          "overrides": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Overrides"
           },
           "pnl": {
             "anyOf": [

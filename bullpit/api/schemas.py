@@ -7,7 +7,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from bullpit.approval.gate import ApprovalDecision
 from bullpit.domain import OrderType, Trade
@@ -34,6 +34,9 @@ class TradeOut(Trade):
     """A live or simulated trade with the request it belongs to."""
 
     request_id: str
+    overrides: list[str] = Field(
+        default_factory=list
+    )  # the approval's overrides, for the badge (M11.1-FR-19)
 
 
 class RequestSummary(BaseModel, frozen=True):
@@ -46,6 +49,8 @@ class RequestSummary(BaseModel, frozen=True):
     created_at: datetime
     expires_at: datetime | None  # only while the report waits for a decision
     decision: str | None  # approved | rejected
+    order_type: str | None  # of an approved order (M11.1)
+    overrides: list[str]  # of the approval; non-empty gets the "override" badge
 
 
 class RequestDetail(RequestSummary):

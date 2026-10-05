@@ -517,14 +517,7 @@ def test_flow_buy_now(env: Env) -> None:
     (trade,) = client.get("/trades").json()
     assert (trade["status"], Decimal(trade["reference_price"])) == ("pending", seen)
 
-    env.broker.live_orders[placed.client_order_id] = LiveOrder(
-        trade=placed.model_copy(
-            update={"status": "open", "entry_date": date(2024, 7, 8), "entry_price": seen}
-        ),
-        exits_active=True,
-        exits_cancelled_at=None,
-        partial=False,
-    )
+    _filled(env, placed)
     assert client.post("/fill-check").status_code == 200
     (trade,) = client.get("/trades").json()
     assert (trade["status"], trade["entry_date"]) == ("open", "2024-07-08")
@@ -560,6 +553,121 @@ def test_flow_advanced(env: Env) -> None:
     (placed,) = env.broker.submitted
     assert (placed.shares, placed.stop_loss) == (order["shares"] + 2, round_cent(reference - 2))
     assert done.json()["approval"]["overrides"] == ["custom_exits", "size_above_plan"]
+    assert done.json()["trade"]["overrides"] == ["custom_exits", "size_above_plan"]
+    (trade,) = client.get("/trades").json()
+    assert trade["overrides"] == ["custom_exits", "size_above_plan"]
+    (summary,) = client.get("/requests").json()
+    assert summary["overrides"] == ["custom_exits", "size_above_plan"]
+
+
+def _filled(env: Env, placed: Trade) -> None:
+    """Alpaca now reports the entry filled."""
+    env.broker.live_orders[placed.client_order_id] = LiveOrder(
+        trade=placed.model_copy(
+            update={
+                "status": "open",
+                "entry_date": date(2024, 7, 8),
+                "entry_price": placed.reference_price,
+            }
+        ),
+        exits_active=True,
+        exits_cancelled_at=None,
+        partial=False,
+    )
+
+
+def test_cancel_happy_path(env: Env) -> None:
+    client = env.client()
+    request_id, _ = env.waiting_report(client)
+    assert _approve(client, request_id).status_code == 200
+    (placed,) = env.broker.submitted
+
+    cancelled = client.post(f"/trades/{request_id}/cancel")
+
+    assert cancelled.status_code == 200, cancelled.text
+    assert (cancelled.json()["status"], cancelled.json()["cancel_reason"]) == (
+        "cancelled",
+        "cancelled by owner",
+    )
+    assert env.broker.cancelled == [placed.order_id]
+    again = client.post(f"/trades/{request_id}/cancel")
+    assert again.status_code == 409 and again.json()["code"] == "not_cancellable"
+    assert client.post("/trades/no-such-request/cancel").status_code == 404
+
+
+def test_cancel_filled_trade_refused(env: Env) -> None:
+    client = env.client()
+    request_id, _ = env.waiting_report(client)
+    assert _approve(client, request_id).status_code == 200
+    _filled(env, env.broker.submitted[0])
+    assert client.post("/fill-check").status_code == 200  # the journal now says open
+
+    refused = client.post(f"/trades/{request_id}/cancel")
+
+    assert refused.status_code == 409 and refused.json()["code"] == "not_cancellable"
+    assert env.broker.cancelled == []  # nothing was asked of Alpaca
+    assert client.get("/trades").json()[0]["status"] == "open"
+
+
+def test_cancel_race(env: Env) -> None:
+    """The entry fills as the cancel crosses: Alpaca ignores the cancel, the re-read
+    shows the fill, and the row is updated as the fill check would."""
+    client = env.client()
+    request_id, _ = env.waiting_report(client)
+    assert _approve(client, request_id).status_code == 200
+    (placed,) = env.broker.submitted
+    _filled(env, placed)  # the journal still says pending
+
+    refused = client.post(f"/trades/{request_id}/cancel")
+
+    assert refused.status_code == 409 and refused.json()["code"] == "not_cancellable"
+    assert env.broker.cancelled == [placed.order_id]
+    (trade,) = client.get("/trades").json()
+    assert (trade["status"], trade["entry_date"]) == ("open", "2024-07-08")
+
+
+def test_flow_limit(env: Env) -> None:
+    client = env.client()
+    request_id, report = env.waiting_report(client)
+    order = report["order"]
+    risk, reward = _distances(order)
+    limit = round_cent(Decimal(order["reference_price"]) - 5)
+
+    preview = _preview(client, request_id, order_type="limit", limit_price=str(limit)).json()
+    assert Decimal(preview["entry_price"]) == limit
+    done = _approve(client, request_id, **_limit_body(report))
+
+    assert done.status_code == 200, done.text
+    (placed,) = env.broker.submitted
+    assert (placed.order_type, placed.limit_price, placed.reference_price) == (
+        "limit",
+        limit,
+        limit,
+    )
+    assert (placed.stop_loss, placed.take_profit) == (
+        round_cent(limit - risk),
+        round_cent(limit + reward),
+    )
+    (trade,) = client.get("/trades").json()
+    assert (trade["status"], trade["order_type"], Decimal(trade["limit_price"])) == (
+        "pending",
+        "limit",
+        limit,
+    )
+    assert trade["overrides"] == []
+    (summary,) = client.get("/requests").json()
+    assert (summary["order_type"], summary["overrides"]) == ("limit", [])
+
+    cancelled = client.post(f"/trades/{request_id}/cancel")
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["status"] == "cancelled"
+
+    result = client.post("/fill-check").json()  # the fill check leaves the row alone
+    assert result["changed"] == []
+    (trade,) = client.get("/trades").json()
+    assert (trade["status"], trade["cancel_reason"]) == ("cancelled", "cancelled by owner")
+    with _patch_sec(), _patch_prices(), _patch_news():  # the lock is free again
+        assert client.post("/requests", json={"ticker": "AAPL"}).status_code == 202
 
 
 def test_loss_warning_from_live_snapshots(env: Env) -> None:
