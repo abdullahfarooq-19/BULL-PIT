@@ -105,6 +105,10 @@ def env(settings: Settings, sessions: sessionmaker[Session]) -> Env:
 
 
 def _approve(client: TestClient, request_id: str, **body: Any) -> Any:
+    """Buy now at the price the report was made at, unless `seen_price` is given."""
+    order = client.get(f"/requests/{request_id}/report").json().get("order")
+    if order is not None:
+        body.setdefault("seen_price", order["reference_price"])
     return client.post(f"/requests/{request_id}/approval", json={"decision": "approve", **body})
 
 

@@ -408,6 +408,7 @@ def create_app(
                 held_value=held,
                 staleness_pct=settings.approval_staleness_pct,
                 cap_pct=settings.max_position_pct,
+                risk_pct=settings.risk_per_trade_pct,
             )
             if isinstance(result, ApprovalProblem):
                 raise Refusal(409, result)
