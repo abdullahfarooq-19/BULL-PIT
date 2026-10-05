@@ -75,6 +75,10 @@ export function OrderPanel({
             shares: decision === "approve" ? shares : null,
             confirm_stale: flags.stale,
             confirm_loss_warning: flags.loss,
+            order_type: "market",
+            seen_price: decision === "approve" ? order.reference_price : null,
+            advanced: false,
+            confirm_overrides: false,
           },
         }),
       );
@@ -109,7 +113,14 @@ export function OrderPanel({
       await unwrap(
         api.POST("/requests/{request_id}/approval", {
           params: { path: { request_id: detail.id } },
-          body: { decision: "reject", confirm_stale: false, confirm_loss_warning: false },
+          body: {
+            decision: "reject",
+            confirm_stale: false,
+            confirm_loss_warning: false,
+            order_type: "market",
+            advanced: false,
+            confirm_overrides: false,
+          },
         }),
       );
       router.push(`/requests/${await startRequest(order.ticker)}`);

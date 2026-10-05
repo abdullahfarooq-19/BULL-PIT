@@ -269,6 +269,16 @@ def test_one_order_per_approval(env: Env, settings: Settings) -> None:
     assert client.get(f"/requests/{third_id}").json()["status"] == "failed"
 
 
+def _preview(client: TestClient, request_id: str, **body: Any) -> Any:
+    return client.post(f"/requests/{request_id}/order-preview", json=body)
+
+
+def _distances(order: dict[str, Any]) -> tuple[Decimal, Decimal]:
+    """The plan's risk and reward per share, which every repriced order keeps."""
+    reference = Decimal(order["reference_price"])
+    return reference - Decimal(order["stop_loss"]), Decimal(order["take_profit"]) - reference
+
+
 def _record_approval(
     sessions: sessionmaker[Session],
     request_id: str,
@@ -426,6 +436,130 @@ def test_pending_limit_reserves_cash_at_limit(env: Env) -> None:
     assert refused.json()["code"] == "rules"
     assert refused.json()["max_shares"] == int(Decimal("1000") // limit)  # priced at the limit
     assert env.broker.submitted == []
+
+
+def test_preview_happy_path(env: Env) -> None:
+    client = env.client()
+    request_id, report = env.waiting_report(client)
+    order = report["order"]
+    risk, reward = _distances(order)
+    env.price = Decimal("230.00")  # the live price is not the report's close
+
+    market = _preview(client, request_id)
+
+    assert market.status_code == 200, market.text
+    body = market.json()
+    assert Decimal(body["price"]) == Decimal(body["entry_price"]) == Decimal("230.00")
+    assert Decimal(body["stop_loss"]) == round_cent(Decimal("230") - risk)
+    assert Decimal(body["take_profit"]) == round_cent(Decimal("230") + reward)
+    assert body["shares"] == order["shares"]
+    assert 0 < body["max_shares"] <= order["shares"]
+    assert Decimal(body["cost"]) == Decimal("230.00") * order["shares"]
+    assert (body["overrides"], body["warnings"]) == ([], [])
+
+    limit = _preview(client, request_id, order_type="limit", limit_price="200").json()
+    assert Decimal(limit["entry_price"]) == Decimal("200.00")
+    assert Decimal(limit["stop_loss"]) == round_cent(Decimal("200") - risk)
+    assert Decimal(limit["price"]) == Decimal("230.00")  # the live price still shows
+    assert limit["warnings"] == []
+
+    at_market = _preview(client, request_id, order_type="limit", limit_price="231").json()
+    assert [w["code"] for w in at_market["warnings"]] == ["limit_at_or_above_price"]
+    assert env.broker.submitted == [] and _rows(env.sessions, ApprovalRecord) == []
+
+
+def test_preview_refusals(env: Env) -> None:
+    client = env.client()
+    assert _preview(client, "no-such-request").status_code == 404
+    request_id, report = env.waiting_report(client)
+
+    missing = _preview(client, request_id, order_type="limit")
+    assert missing.status_code == 422 and missing.json()["code"] == "invalid_request"
+
+    env.price = None  # the price read fails: nothing is invented
+    market = _preview(client, request_id).json()
+    assert market["price"] is None and market["entry_price"] is None
+    assert market["stop_loss"] is None and market["cost"] is None
+    assert [w["code"] for w in market["warnings"]] == ["price_unavailable"]
+    limit = _preview(client, request_id, order_type="limit", limit_price="200").json()
+    assert limit["price"] is None and Decimal(limit["entry_price"]) == Decimal("200.00")
+    assert [w["code"] for w in limit["warnings"]] == ["price_unavailable"]
+
+    env.price = Decimal(report["order"]["reference_price"])
+    assert _approve(client, request_id).status_code == 200
+    done = _preview(client, request_id)
+    assert done.status_code == 409 and done.json()["code"] == "not_awaiting"
+
+
+def test_flow_buy_now(env: Env) -> None:
+    client = env.client()
+    request_id, report = env.waiting_report(client)
+    order = report["order"]
+    risk, reward = _distances(order)
+    env.price = Decimal(order["reference_price"]) + 3  # the market moved since the report
+
+    preview = _preview(client, request_id).json()
+    seen = Decimal(preview["entry_price"])
+    done = _approve(client, request_id, seen_price=str(seen))
+
+    assert done.status_code == 200, done.text
+    (placed,) = env.broker.submitted
+    assert placed.order_type == "market" and placed.limit_price is None
+    assert (placed.reference_price, placed.shares) == (seen, order["shares"])
+    assert (placed.stop_loss, placed.take_profit) == (
+        round_cent(seen - risk),
+        round_cent(seen + reward),
+    )
+    assert (placed.stop_loss, placed.take_profit) == (
+        Decimal(preview["stop_loss"]),
+        Decimal(preview["take_profit"]),
+    )
+    (trade,) = client.get("/trades").json()
+    assert (trade["status"], Decimal(trade["reference_price"])) == ("pending", seen)
+
+    env.broker.live_orders[placed.client_order_id] = LiveOrder(
+        trade=placed.model_copy(
+            update={"status": "open", "entry_date": date(2024, 7, 8), "entry_price": seen}
+        ),
+        exits_active=True,
+        exits_cancelled_at=None,
+        partial=False,
+    )
+    assert client.post("/fill-check").status_code == 200
+    (trade,) = client.get("/trades").json()
+    assert (trade["status"], trade["entry_date"]) == ("open", "2024-07-08")
+
+
+def test_flow_advanced(env: Env) -> None:
+    client = env.client()
+    request_id, report = env.waiting_report(client)
+    order = report["order"]
+    reference = Decimal(order["reference_price"])
+    edits = {
+        "advanced": True,
+        "shares": order["shares"] + 2,
+        "stop_loss": str(round_cent(reference - 2)),
+        "take_profit": str(round_cent(reference + 3)),
+    }
+
+    preview = _preview(client, request_id, **edits).json()
+    assert preview["overrides"] == ["custom_exits", "size_above_plan"]
+    assert preview["max_shares"] >= order["shares"] + 2
+
+    refused = _approve(client, request_id, **edits)
+    assert refused.status_code == 409
+    assert refused.json()["code"] == "override_not_confirmed"
+    assert refused.json()["overrides"] == ["custom_exits", "size_above_plan"]
+    assert env.broker.submitted == [] and _rows(env.sessions, ApprovalRecord) == []
+
+    done = _approve(client, request_id, confirm_overrides=True, **edits)
+
+    assert done.status_code == 200, done.text
+    (row,) = _rows(env.sessions, ApprovalRecord)
+    assert row.overrides == ["custom_exits", "size_above_plan"]
+    (placed,) = env.broker.submitted
+    assert (placed.shares, placed.stop_loss) == (order["shares"] + 2, round_cent(reference - 2))
+    assert done.json()["approval"]["overrides"] == ["custom_exits", "size_above_plan"]
 
 
 def test_loss_warning_from_live_snapshots(env: Env) -> None:

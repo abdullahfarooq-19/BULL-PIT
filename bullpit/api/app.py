@@ -11,7 +11,7 @@ from __future__ import annotations
 import re
 import threading
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
@@ -32,6 +32,9 @@ from bullpit.api.schemas import (
     BacktestRunOut,
     EquityPoint,
     NewRequest,
+    OrderPreview,
+    OrderPreviewBody,
+    PreviewWarning,
     Problem,
     RequestDetail,
     RequestStarted,
@@ -45,13 +48,15 @@ from bullpit.approval.gate import (
     OwnerDecision,
     check_decision,
     expires_at,
+    final_order,
+    override_flags,
 )
 from bullpit.broker.alpaca import AlpacaBroker
 from bullpit.clock import utc_now
 from bullpit.config import Settings
 from bullpit.data.calendar import last_completed_session
 from bullpit.data.prices import latest_price as fetch_latest_price
-from bullpit.domain import Account
+from bullpit.domain import Account, SizedOrder
 from bullpit.errors import BrokerRejected, DataUnavailable
 from bullpit.graph import ApprovalWiring, Deps, build_graph
 from bullpit.journal.models import (
@@ -68,6 +73,7 @@ from bullpit.journal.models import Request as RequestRow
 from bullpit.llm.gateway import CompletionFn, litellm_completion
 from bullpit.logging import get_logger
 from bullpit.report.model import Report
+from bullpit.risk.sizing import cap_shares, cash_shares, round_cent
 from bullpit.runners.fill_check import FillCheckResult, fill_check
 from bullpit.runners.request import (
     PendingAwareBroker,
@@ -175,6 +181,145 @@ def _run_out(session: Session, run: BacktestRun) -> dict[str, Any]:
 
 def _results_images(directory: Path) -> list[str]:
     return sorted(path.name for path in directory.glob("*.png"))
+
+
+def _percent(part: Decimal, whole: Decimal) -> Decimal | None:
+    return None if whole <= 0 else part / whole * 100
+
+
+def _preview(
+    body: OrderPreviewBody,
+    order: SizedOrder,
+    *,
+    latest: Decimal | None,
+    fetched_at: datetime,
+    as_of: date,
+    loss_warning: bool | None,
+    account: Account,
+    held: Decimal,
+    settings: Settings,
+) -> OrderPreview:
+    """Prices the order the chosen mode would place, with the gate's own functions
+    so the box and the approval can't disagree (M11.1-FR-10, sec11.2). The gate's
+    refusal for this order, if any, is shown as a warning."""
+    is_limit = body.order_type == "limit"
+    entry = body.limit_price if is_limit else latest
+    warnings: list[PreviewWarning] = []
+    if latest is None:
+        warnings.append(
+            PreviewWarning(
+                code="price_unavailable", message="The latest price isn't available right now."
+            )
+        )
+    numbers: dict[str, Any] = {}
+    overrides: list[str] = []
+    max_shares: int | None = None
+    if entry is not None:
+        entry = round_cent(entry)
+        decision = OwnerDecision(
+            decision="approve",
+            shares=body.shares,
+            order_type=body.order_type,
+            limit_price=entry if is_limit else None,
+            seen_price=None if is_limit else entry,
+            advanced=body.advanced,
+            stop_loss=body.stop_loss,
+            take_profit=body.take_profit,
+            confirm_stale=True,
+            confirm_loss_warning=True,
+            confirm_overrides=True,
+        )
+        final = final_order(order, decision, entry)
+        if isinstance(final, ApprovalProblem):
+            warnings.append(PreviewWarning(code=final.code, message=final.message))
+        else:
+            equity = account.equity
+            cash_fits = cash_shares(account.cash, entry)
+            max_shares = (
+                cash_fits
+                if body.advanced
+                else min(
+                    order.shares,
+                    cash_fits,
+                    cap_shares(equity, held, entry, settings.max_position_pct),
+                )
+            )
+            if body.advanced:
+                overrides = list(
+                    override_flags(
+                        final,
+                        order,
+                        equity,
+                        held,
+                        cap_pct=settings.max_position_pct,
+                        risk_pct=settings.risk_per_trade_pct,
+                    )
+                )
+            position_pct = _percent(held + final.cost, equity)
+            loss_pct = _percent(final.max_loss, equity)
+            if "above_cap" in overrides and position_pct is not None:
+                cap = settings.max_position_pct * 100
+                warnings.append(
+                    PreviewWarning(
+                        code="above_cap",
+                        message=(
+                            f"This puts {position_pct:.1f}% of equity in one stock "
+                            f"(plan cap {cap:.0f}%)."
+                        ),
+                    )
+                )
+            if "above_risk_limit" in overrides and loss_pct is not None:
+                risk = settings.risk_per_trade_pct * 100
+                warnings.append(
+                    PreviewWarning(
+                        code="above_risk_limit",
+                        message=(f"Maximum loss is {loss_pct:.1f}% of equity (plan {risk:.0f}%)."),
+                    )
+                )
+            numbers = {
+                "stop_loss": final.stop_loss,
+                "take_profit": final.take_profit,
+                "cost": final.cost,
+                "max_loss": final.max_loss,
+                "max_gain": final.max_gain,
+                "pct_of_equity": _percent(final.cost, equity),
+                "loss_pct_of_equity": loss_pct,
+                "position_pct_after": position_pct,
+            }
+            if latest is not None:
+                if is_limit and entry >= latest:
+                    warnings.append(
+                        PreviewWarning(
+                            code="limit_at_or_above_price",
+                            message="This fills at once, at the market price.",
+                        )
+                    )
+                outcome = check_decision(
+                    decision,
+                    order,
+                    as_of=as_of,
+                    now=fetched_at,
+                    latest_price=latest,
+                    loss_warning=loss_warning,
+                    account=account,
+                    held_value=held,
+                    staleness_pct=settings.approval_staleness_pct,
+                    cap_pct=settings.max_position_pct,
+                    risk_pct=settings.risk_per_trade_pct,
+                )
+                if isinstance(outcome, ApprovalProblem):
+                    warnings.append(PreviewWarning(code=outcome.code, message=outcome.message))
+    return OrderPreview(
+        price=latest,
+        fetched_at=fetched_at,
+        order_type=body.order_type,
+        entry_price=entry,
+        shares=order.shares if body.shares is None else body.shares,
+        max_shares=max_shares,
+        overrides=overrides,
+        warnings=warnings,
+        **numbers,
+    )
 
 
 def create_app(
@@ -416,6 +561,49 @@ def create_app(
                         ApprovalProblem(code="not_awaiting", message="Already decided."),
                     ) from exc
             return resume(request_id, result)
+
+    @app.post(
+        "/requests/{request_id}/order-preview",
+        response_model=OrderPreview,
+        responses={
+            404: {"model": Problem},
+            409: {"model": ApprovalProblem},
+            502: {"model": Problem},
+        },
+    )
+    def order_preview(request_id: str, body: OrderPreviewBody) -> OrderPreview:
+        sweep(request_id=request_id)
+        with sessions() as session:
+            row = session.get(RequestRow, request_id)
+            if row is None or row.mode != "live":
+                raise _not_found("request")
+            report_row = session.scalars(
+                select(ReportRecord).where(ReportRecord.request_id == request_id)
+            ).one_or_none()
+            status, ticker, as_of = row.status, row.ticker, row.as_of
+        if status != "awaiting_approval" or report_row is None:
+            raise Refusal(
+                409,
+                ApprovalProblem(
+                    code="not_awaiting",
+                    message=f"This request isn't waiting for a decision: it is {status}.",
+                ),
+            )
+        report = Report.model_validate(report_row.report)
+        if report.order is None:
+            raise ValueError(f"request {request_id} awaits approval without an order")
+        latest, account, held = market_view(ticker)
+        return _preview(
+            body,
+            report.order,
+            latest=latest,
+            fetched_at=now(),
+            as_of=as_of,
+            loss_warning=report.loss_warning,
+            account=account,
+            held=held,
+            settings=settings,
+        )
 
     # --- trades, equity, fill check ------------------------------------------
 

@@ -73,6 +73,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/requests/{request_id}/order-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Order Preview */
+        post: operations["order_preview_requests__request_id__order_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/trades": {
         parameters: {
             query?: never;
@@ -219,6 +236,27 @@ export interface components {
              * @default []
              */
             confirmations: ("stale" | "loss_warning")[];
+            /**
+             * Order Type
+             * @default market
+             * @enum {string}
+             */
+            order_type: "market" | "limit";
+            /** Entry Price */
+            entry_price?: string | null;
+            /** Limit Price */
+            limit_price?: string | null;
+            /** Stop Loss */
+            stop_loss?: string | null;
+            /** Take Profit */
+            take_profit?: string | null;
+            /** Seen Price */
+            seen_price?: string | null;
+            /**
+             * Overrides
+             * @default []
+             */
+            overrides: ("custom_exits" | "size_above_plan" | "above_cap" | "above_risk_limit")[];
         };
         /**
          * ApprovalProblem
@@ -229,7 +267,7 @@ export interface components {
              * Code
              * @enum {string}
              */
-            code: "not_awaiting" | "expired" | "shares_invalid" | "price_unavailable" | "stale" | "loss_warning" | "rules";
+            code: "not_awaiting" | "expired" | "shares_invalid" | "price_unavailable" | "stale" | "loss_warning" | "rules" | "limit_invalid" | "exits_invalid" | "override_not_confirmed";
             /** Message */
             message: string;
             /** Report Price */
@@ -240,6 +278,8 @@ export interface components {
             move_pct?: string | null;
             /** Max Shares */
             max_shares?: number | null;
+            /** Overrides */
+            overrides?: ("custom_exits" | "size_above_plan" | "above_cap" | "above_risk_limit")[] | null;
         };
         /** ApprovalResult */
         ApprovalResult: {
@@ -447,6 +487,77 @@ export interface components {
             ticker: string;
         };
         /**
+         * OrderPreview
+         * @description The order the chosen mode would place, priced from the live price, with
+         *     nothing placed (M11.1-FR-10). Every number is `None` when it can't be priced
+         *     (no price for a market order, or exits that can't hold); `warnings` say why.
+         */
+        OrderPreview: {
+            /** Price */
+            price: string | null;
+            /**
+             * Fetched At
+             * Format: date-time
+             */
+            fetched_at: string;
+            /**
+             * Order Type
+             * @enum {string}
+             */
+            order_type: "market" | "limit";
+            /** Entry Price */
+            entry_price: string | null;
+            /** Stop Loss */
+            stop_loss?: string | null;
+            /** Take Profit */
+            take_profit?: string | null;
+            /** Shares */
+            shares: number;
+            /** Max Shares */
+            max_shares?: number | null;
+            /** Cost */
+            cost?: string | null;
+            /** Max Loss */
+            max_loss?: string | null;
+            /** Max Gain */
+            max_gain?: string | null;
+            /** Pct Of Equity */
+            pct_of_equity?: string | null;
+            /** Loss Pct Of Equity */
+            loss_pct_of_equity?: string | null;
+            /** Position Pct After */
+            position_pct_after?: string | null;
+            /** Overrides */
+            overrides: string[];
+            /** Warnings */
+            warnings: components["schemas"]["PreviewWarning"][];
+        };
+        /**
+         * OrderPreviewBody
+         * @description What the order box asks the preview to price (M11.1-FR-10).
+         */
+        OrderPreviewBody: {
+            /**
+             * Order Type
+             * @default market
+             * @enum {string}
+             */
+            order_type: "market" | "limit";
+            /** Limit Price */
+            limit_price?: number | string | null;
+            /**
+             * Advanced
+             * @default false
+             */
+            advanced: boolean;
+            /** Shares */
+            shares?: number | null;
+            /** Stop Loss */
+            stop_loss?: number | string | null;
+            /** Take Profit */
+            take_profit?: number | string | null;
+        };
+        /**
          * OwnerDecision
          * @description The approval request body.
          */
@@ -468,6 +579,37 @@ export interface components {
              * @default false
              */
             confirm_loss_warning: boolean;
+            /**
+             * Order Type
+             * @default market
+             * @enum {string}
+             */
+            order_type: "market" | "limit";
+            /** Limit Price */
+            limit_price?: number | string | null;
+            /** Seen Price */
+            seen_price?: number | string | null;
+            /**
+             * Advanced
+             * @default false
+             */
+            advanced: boolean;
+            /** Stop Loss */
+            stop_loss?: number | string | null;
+            /** Take Profit */
+            take_profit?: number | string | null;
+            /**
+             * Confirm Overrides
+             * @default false
+             */
+            confirm_overrides: boolean;
+        };
+        /** PreviewWarning */
+        PreviewWarning: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
         };
         /**
          * Problem
@@ -715,6 +857,14 @@ export interface components {
             /** Take Profit Order Id */
             take_profit_order_id?: string | null;
             /**
+             * Order Type
+             * @default market
+             * @enum {string}
+             */
+            order_type: "market" | "limit";
+            /** Limit Price */
+            limit_price?: string | null;
+            /**
              * Pnl
              * @description (exit - entry) x shares, once closed or marked at the window end.
              */
@@ -765,6 +915,14 @@ export interface components {
             stop_order_id?: string | null;
             /** Take Profit Order Id */
             take_profit_order_id?: string | null;
+            /**
+             * Order Type
+             * @default market
+             * @enum {string}
+             */
+            order_type: "market" | "limit";
+            /** Limit Price */
+            limit_price?: string | null;
             /** Request Id */
             request_id: string;
             /**
@@ -970,6 +1128,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApprovalResult"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Conflict */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApprovalProblem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    order_preview_requests__request_id__order_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrderPreviewBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrderPreview"];
                 };
             };
             /** @description Not Found */
