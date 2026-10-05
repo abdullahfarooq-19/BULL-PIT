@@ -17,9 +17,11 @@ still open. The sources of truth stay [`architecture.md`](architecture.md),
 | M5 | Report generator | Done, tagged `m5` |
 | M6 | Simulated broker, journal, backtest runner | Done, tagged `m6` |
 | M7 | Evaluation, baselines, pilot results | Done, tagged `m7` |
-| M8 | Live mode: API, dashboard, approval, bracket orders, fill check | Code is on `master` (merged with M11.1); not tagged: still waits on its market-session items, a push and owner acceptance |
+| M8 | Live mode: API, dashboard, approval, bracket orders, fill check | Done, tagged `m8` (accepted 2026-10-06; a few real-world checks carried over, see its `task.md`) |
 | M11.1 | Report explanations, order box, cancel, advanced mode | Done, tagged `m11.1` |
-| M11.2 | Dashboard restructure: Account & Wallet, Trades History, Portfolio | Built on branch `m11.2-dashboard-restructure`; waits on the owner's review |
+| M11.2 | Dashboard restructure: Account & Wallet, Trades History, Portfolio | Done, tagged `m11.2` |
+| M11.3 | Live P&L, market and connection badges, logo and motto | Done, tagged `m11.3` |
+| M11.4 | Backtests page removed (results are `docs/results/results.md`) | Done, tagged `m11.4` |
 | M9 | Dashboard polish, README, results write-up | Not started |
 
 ## What each milestone delivered

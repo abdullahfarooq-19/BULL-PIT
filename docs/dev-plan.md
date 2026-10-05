@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Revision 10: D21 added (the Backtests page leaves the dashboard); revision 9 content follows. Earlier: Revision 9: D19 and D20 added (dashboard restructure, live balance and watchlist); M7 accepted, M8 built and awaiting acceptance, M11.1 built and merged, M11.2 in build |
+| **Status** | Revision 10: D21 added (the Backtests page leaves the dashboard); revision 9 content follows. Earlier: Revision 9: D19 and D20 added (dashboard restructure, live balance and watchlist); M7 and M8 accepted, M11.1 to M11.4 built and merged |
 | **Changes in revision 10** | D21 added ([§3](#3-deviations-from-the-architecture-roadmap)); M11.4 added to §4 and §5; `architecture.md` v2.9 |
 | **Changes in revision 9** | D19 and D20 added ([§3](#3-deviations-from-the-architecture-roadmap)); M11.2 added to §4 and §5; §8 gets the `0009` row; `architecture.md` v2.8 |
 | **Changes in revision 8** | D15 to D18 added ([§3](#3-deviations-from-the-architecture-roadmap)); M11.1 added to §4 and §5 and its report-page and order-box part taken out of M9; §8 gets the `0008` row; `architecture.md` v2.7 |
