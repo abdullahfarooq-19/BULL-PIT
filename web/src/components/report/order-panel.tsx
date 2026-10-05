@@ -95,6 +95,8 @@ export function OrderPanel({
   const target = preview?.take_profit ?? order.take_profit;
   const maxShares = preview?.max_shares ?? (advanced ? null : order.shares);
   const atMax = maxShares != null && shares >= maxShares;
+  // The price line already says when there is no price.
+  const shownWarnings = (preview?.warnings ?? []).filter((w) => w.code !== "price_unavailable");
   const canApprove = preview?.entry_price != null && !busy;
 
   const choose = (value: number) => {
@@ -390,9 +392,9 @@ export function OrderPanel({
             </div>
           )}
 
-          {preview && preview.warnings.length > 0 && (
+          {shownWarnings.length > 0 && (
             <ul className="space-y-1 text-sm" aria-label="Warnings">
-              {preview.warnings.map((warning) => (
+              {shownWarnings.map((warning) => (
                 <li
                   key={warning.code}
                   className={warning.code.startsWith("above_") ? "text-bear" : "text-amber"}
