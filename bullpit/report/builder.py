@@ -489,14 +489,16 @@ def fallback_narrative(
     ]
     last = state.attempts[-1] if state.attempts else None
     verdict = None if last is None else last.verdict
-    conclusion = (
-        f"The final convictions were bull {conviction[0]} and bear {conviction[1]}. "
-        f"The trader recommended {'a buy' if report.outcome == 'buy' else 'no trade'}."
+    decision = report.reason or (
+        "The trader recommended a buy."
+        if report.outcome == "buy"
+        else "The trader recommended no trade."
     )
-    if verdict is not None:
+    conclusion = (
+        f"The final convictions were bull {conviction[0]} and bear {conviction[1]}. {decision}"
+    )
+    if verdict is not None and report.outcome == "buy":
         conclusion += f" The risk review's decision: {verdict.decision}."
-    if report.reason:
-        conclusion += f" {report.reason}"
     return DebateNarrative(
         rounds=[
             f"The bull argued from {_round_case(state.debate, 'bull', number)}; "

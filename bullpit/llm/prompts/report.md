@@ -28,7 +28,7 @@ Also write one paragraph per analyst, each at most {{ max_words }} words, for a 
 {% endfor %}
 {% endif %}
 
-Rules: use only numbers that appear in the report above, written the same way, and never calculate a new one. Cite evidence IDs in brackets like (T1, F2), only IDs that appear above.
+Rules: use only numbers that appear in the report above, copied exactly with the same symbols (a figure shown without a $ or % sign, such as EPS or a P/E, stays without one), and never calculate a new one. Cite evidence IDs in brackets like (T1, F2), only IDs that appear above.
 {% if rejected %}
 
 Your previous draft used numbers or IDs that are not in the report: {{ rejected|join(", ") }}. Write it again without them.
