@@ -15,6 +15,11 @@ export function num(value: number | null | undefined): string {
   return value == null ? "not available" : value.toLocaleString("en-US", TWO);
 }
 
+/** A score with its sign, `+0.41`. */
+export function signed(value: number): string {
+  return `${value >= 0 ? "+" : ""}${value.toFixed(2)}`;
+}
+
 /** Exact cents from a two-decimal price string, so share maths never touches floats. */
 export function toCents(price: string): number {
   return Math.round(Number(price) * 100);

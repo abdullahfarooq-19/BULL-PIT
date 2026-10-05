@@ -1,11 +1,11 @@
 "use client";
 
 import { motion } from "motion/react";
-import { useState } from "react";
 
 import type { Report } from "@/api/client";
+import { AnalystSection } from "@/components/report/analyst-section";
+import { DebateSection } from "@/components/report/debate-section";
 import { EvidenceText, evidenceFacts } from "@/components/report/evidence-text";
-import { SignalGauges } from "@/components/report/signal-gauges";
 import { dateTime, money, num, pct } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -83,44 +83,13 @@ export function ReportView({ report }: { report: Report }) {
 
       {report.signals.length > 0 && (
         <Section title="What the analysts found" index={next()}>
-          <SignalGauges signals={report.signals} />
-          <div className="mt-5 grid gap-4 md:grid-cols-3">
-            {report.signals.map((signal) => (
-              <div key={signal.analyst}>
-                <h3 className="mb-2 text-sm font-medium capitalize">{signal.analyst}</h3>
-                {signal.flagged && (
-                  <p className="mb-2 text-xs text-amber">Flagged{signal.note ? `: ${signal.note}` : ""}</p>
-                )}
-                <EvidenceList evidence={signal.evidence} />
-              </div>
-            ))}
-          </div>
+          <AnalystSection report={report} facts={facts} />
         </Section>
       )}
 
       {report.debate && (
         <Section title="The debate" index={next()}>
-          <div className="grid gap-4 md:grid-cols-2">
-            <Side tone="bull" title="Bull" text={report.debate.strongest_bull} conviction={report.debate.bull_conviction} facts={facts} />
-            <Side tone="bear" title="Bear" text={report.debate.strongest_bear} conviction={report.debate.bear_conviction} facts={facts} />
-          </div>
-          <dl className="mt-4 space-y-2 text-sm">
-            {report.debate.bull_conceded && (
-              <div>
-                <dt className="inline text-muted-foreground">The bull conceded: </dt>
-                <dd className="inline italic"><EvidenceText text={report.debate.bull_conceded} facts={facts} /></dd>
-              </div>
-            )}
-            {report.debate.unresolved && (
-              <div>
-                <dt className="inline text-muted-foreground">Unresolved: </dt>
-                <dd className="inline">{report.debate.unresolved}</dd>
-              </div>
-            )}
-            <div className="text-xs text-muted-foreground">
-              Points without valid evidence: <span className="num">{report.debate.unsupported_points}</span>
-            </div>
-          </dl>
+          <DebateSection report={report} debate={report.debate} facts={facts} />
         </Section>
       )}
 
@@ -228,69 +197,6 @@ export function ReportView({ report }: { report: Report }) {
 
       <p className="pt-2 text-center text-xs text-muted-foreground">
         Research, not financial advice. Paper trading only.
-      </p>
-    </div>
-  );
-}
-
-const EVIDENCE_SHOWN = 5;
-
-/** An analyst's evidence facts; a long list (headlines) shows its first few. */
-function EvidenceList({ evidence }: { evidence: Report["signals"][number]["evidence"] }) {
-  const [all, setAll] = useState(false);
-  const shown = all ? evidence : evidence.slice(0, EVIDENCE_SHOWN);
-  return (
-    <>
-      <ul className="space-y-1.5 text-sm text-muted-foreground">
-        {shown.map((e) => (
-          <li key={e.id} className="flex gap-2">
-            <span className="num shrink-0 text-amber">{e.id}</span>
-            <span>{e.fact}</span>
-          </li>
-        ))}
-      </ul>
-      {evidence.length > EVIDENCE_SHOWN && (
-        <button
-          type="button"
-          onClick={() => setAll(!all)}
-          aria-expanded={all}
-          className="mt-2 text-xs text-amber underline-offset-4 hover:underline"
-        >
-          {all ? "Show fewer" : `Show all ${evidence.length}`}
-        </button>
-      )}
-    </>
-  );
-}
-
-function Side({
-  tone,
-  title,
-  text,
-  conviction,
-  facts,
-}: {
-  tone: "bull" | "bear";
-  title: string;
-  text: string;
-  conviction: number | null;
-  facts: Map<string, string>;
-}) {
-  const colour = tone === "bull" ? "border-bull/40 text-bull" : "border-bear/40 text-bear";
-  const bar = tone === "bull" ? "bg-bull" : "bg-bear";
-  return (
-    <div className={cn("rounded-lg border bg-surface-2 p-4", colour.split(" ")[0])}>
-      <div className="mb-2 flex items-center justify-between">
-        <h3 className={cn("text-sm font-semibold", colour.split(" ")[1])}>{title}</h3>
-        <span className="num text-xs text-muted-foreground">
-          conviction {conviction == null ? "n/a" : num(conviction)}
-        </span>
-      </div>
-      <div className="mb-3 h-1 overflow-hidden rounded-full bg-background" aria-hidden>
-        <div className={cn("h-full", bar)} style={{ width: `${(conviction ?? 0) * 100}%` }} />
-      </div>
-      <p className="text-sm leading-relaxed text-foreground">
-        <EvidenceText text={text} facts={facts} />
       </p>
     </div>
   );

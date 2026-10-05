@@ -7,7 +7,6 @@ import { api, unwrap } from "@/api/client";
 import { OrderPanel } from "@/components/report/order-panel";
 import { ProgressTimeline } from "@/components/report/progress-timeline";
 import { ReportView } from "@/components/report/report-view";
-import { SignalGauges } from "@/components/report/signal-gauges";
 import { ErrorPanel, LoadingPanel } from "@/components/states";
 import { StatusDot } from "@/components/status";
 import { Button } from "@/components/ui/button";
@@ -51,7 +50,6 @@ export default function RequestPage({ params }: { params: Promise<{ id: string }
           <StatusDot status="running" />
         </div>
         <ProgressTimeline stage={request.stage} debateRound={request.debate_round} />
-        <SignalGauges signals={[]} />
       </div>
     );
   }
