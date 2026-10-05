@@ -142,19 +142,37 @@ cd web && npm ci && npm run build && npm run start    # the dashboard, http://12
 
 1. **Start a request.** Type a ticker on the first page (or press `Ctrl K`). The
    graph runs for about a minute and shows its progress.
-2. **Read the report.** A buy shows the bracket order to scale: take-profit on top,
-   the reference price, the stop below, so the 1.5 reward-to-risk is visible.
-3. **Decide.** Lower the share count if you like (it can never go up), then *press and
-   hold* Approve for 1.2 seconds, or Reject. The API checks again, whatever the page
-   sends: the price hasn't moved more than 2% since the report (else you confirm or
-   re-run), a loss warning needs a confirmation, cash and the 10% per-stock cap still
-   hold with orders that haven't filled yet counted, and the report is under one
-   trading day old. A report you haven't decided survives an API restart.
-4. **The order.** An approved buy becomes one bracket order (market entry, stop-loss and
-   take-profit, good till cancelled) on the Alpaca **paper** account. Its ID comes from
-   the request, so sending the approval twice still makes one order. After that the
-   system never touches the trade.
-5. **Fills.** The **Trades** page and `uv run bullpit fill-check` record the entry, the
+2. **Read the report.** Each analyst has a plain-language paragraph, a lean bar (bearish
+   fills left, bullish fills right, length is its confidence, a failed analyst says it
+   could not run) and every fact it used. The debate is explained round by round, with
+   how it reached its conclusion, the two conviction bars and, on request, every turn.
+   The paragraphs are written by the report writer from code-written facts and pass the
+   same number and evidence-ID check as the rest of the report; they explain the model's
+   stated judgment, they are not a calculation.
+3. **Decide in the order box.** It shows the latest trade price (refreshed about every
+   5 seconds while the tab is visible) and the bracket order to scale. Choose **Buy now**
+   (a market order; the stop and take-profit follow the price you see, keeping the plan's
+   distances) or **Buy at a price** (a good-till-cancelled limit order that waits on
+   Alpaca until the price reaches yours). Lower the share count if you like, then *press
+   and hold* Approve for 1.2 seconds, or Reject. All the order maths is on the API, and
+   it checks again on approval, whatever the page sends: for a market order the price
+   hasn't moved more than 2% from the one you saw (else you confirm or re-run), a loss
+   warning needs a confirmation, cash and the 10% per-stock cap still hold with orders
+   that haven't filled yet counted, and the report is under one trading day old.
+   A report you haven't decided survives an API restart.
+4. **Advanced mode (off by default).** Tick *Edit stop, take-profit and size* to set your
+   own stop and take-profit and a share count above the recommendation. A warning stays
+   on screen. **Your cash is the only hard limit**; going past the 10% cap or the 1% risk
+   limit is allowed after a confirmation that lists each override, and every override is
+   recorded and badged *Override* on History and Trades. The report is not edited: it
+   still describes the original plan.
+5. **The order.** An approved buy becomes one bracket order (entry, stop-loss and
+   take-profit, good till cancelled) on the Alpaca **paper** account, built from the
+   recorded approval. Its ID comes from the request, so sending the approval twice still
+   makes one order. A limit order stays pending until it fills or **you cancel it** (the
+   *Cancel order* button on the report page and on Trades); a filled trade is never
+   touched by the system.
+6. **Fills.** The **Trades** page and `uv run bullpit fill-check` record the entry, the
    exit and the profit or loss from Alpaca, and any position you close by hand as
    *manual*. The fill check runs whenever the dashboard opens; there is no scheduler.
 
@@ -183,8 +201,10 @@ checks) run automatically on `git commit` once installed with
   (`https://paper-api.alpaca.markets`), before any network call. There is
   no setting to turn this off.
 - **A person approves every trade.** No live code path places an order
-  without a recorded approval; the API refuses to raise the share count, and
-  it listens on `127.0.0.1` only.
+  without a recorded approval, and the order placed is built from that
+  record. Outside the opt-in advanced mode the API refuses to raise the
+  share count; in it, cash is still a hard limit and every override is
+  recorded. The API listens on `127.0.0.1` only.
 - **Secrets stay local.** `.env` is git-ignored; `.env.example` lists the
   variable names with no values; gitleaks scans every commit and every CI
   run for accidentally-committed secrets.
