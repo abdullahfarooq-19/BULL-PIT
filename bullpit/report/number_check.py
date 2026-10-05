@@ -17,11 +17,16 @@ from typing import Literal
 
 Unit = Literal["money", "percent", "plain"]
 
+# The writer LLM often types a date with a typographic hyphen (U+2011 and its kin),
+# which is the same date to a reader, so the date pattern accepts them all.
+_DASHES = "\N{HYPHEN}\N{NON-BREAKING HYPHEN}\N{FIGURE DASH}\N{EN DASH}\N{EM DASH}\N{HORIZONTAL BAR}"
+_DASH_TO_HYPHEN = str.maketrans(dict.fromkeys(_DASHES, "-"))
+
 # One scan, leftmost match wins: an ID or date is consumed before its digits
 # could be read as a number.
 _TOKEN_RE = re.compile(
     r"(?P<id>\b[TFS]\d+\b)"
-    r"|(?P<date>\b\d{4}-\d{2}-\d{2}\b)"
+    rf"|(?P<date>\b\d{{4}}[-{_DASHES}]\d{{2}}[-{_DASHES}]\d{{2}}\b)"
     r"|(?P<number>[-+\N{MINUS SIGN}]?\$?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?%?)"
 )
 _MASK = "[?]"
@@ -36,6 +41,11 @@ class AllowedNumbers:
     percent: frozenset[Decimal]
     plain: frozenset[Decimal]
     dates: frozenset[str]
+
+
+def _iso(date_token: str) -> str:
+    """The date with plain hyphens, as the report writes it."""
+    return date_token.translate(_DASH_TO_HYPHEN)
 
 
 def _scan(text: str) -> Iterator[re.Match[str]]:
@@ -58,7 +68,7 @@ def allowed_numbers(text: str) -> AllowedNumbers:
     dates: set[str] = set()
     for match in _scan(text):
         if match["date"]:
-            dates.add(match["date"])
+            dates.add(_iso(match["date"]))
         elif match["number"]:
             values[_unit(match["number"])].add(Decimal(_digits(match["number"])))
     return AllowedNumbers(
@@ -99,7 +109,7 @@ def check_text(text: str, allowed: AllowedNumbers, registry: Collection[str]) ->
         if match["id"]:
             ok = token in registry
         elif match["date"]:
-            ok = token in allowed.dates
+            ok = _iso(token) in allowed.dates
         else:
             ok = _number_allowed(token, allowed)
         if not ok and token not in rejected:
@@ -115,7 +125,7 @@ def mask_unknown_numbers(text: str, allowed: AllowedNumbers) -> str:
         token = match[0]
         if match["id"]:
             return token
-        ok = token in allowed.dates if match["date"] else _number_allowed(token, allowed)
+        ok = _iso(token) in allowed.dates if match["date"] else _number_allowed(token, allowed)
         return token if ok else _MASK
 
     return _TOKEN_RE.sub(replace, text)

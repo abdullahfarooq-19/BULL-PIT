@@ -57,3 +57,16 @@ def test_rejects(text: str, rejected: list[str]) -> None:
 def test_mask_unknown_numbers() -> None:
     text = "Target $200 and 5.8% on 2024-10-19, per T1 and T99."
     assert mask_unknown_numbers(text, _ALLOWED) == "Target [?] and 5.8% on [?], per T1 and T99."
+
+
+# U+2010 hyphen, U+2011 non-breaking hyphen, U+2012 figure dash, U+2013 en dash, U+2014 em dash
+@pytest.mark.parametrize("hyphen", [chr(code) for code in range(0x2010, 0x2015)])
+def test_a_date_with_a_typographic_hyphen_is_the_same_date(hyphen: str) -> None:
+    """Found on a real GOOGL report: a date typed with non-breaking hyphens was read as three
+    loose numbers, so the whole report prose fell back to code wording."""
+    date = f"2024{hyphen}10{hyphen}18"
+    other = f"2024{hyphen}10{hyphen}19"
+    assert check_text(f"as of {date}", _ALLOWED, _REGISTRY) == []
+    assert check_text(f"as of {other}", _ALLOWED, _REGISTRY) == [other]
+    assert mask_unknown_numbers(f"on {date} and {other}", _ALLOWED) == f"on {date} and [?]"
+    assert allowed_numbers(f"Filed {date}").dates == {"2024-10-18"}
