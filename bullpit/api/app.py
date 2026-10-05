@@ -60,6 +60,8 @@ from bullpit.journal.models import (
     EquitySnapshot,
     ReportRecord,
     TradeRecord,
+    approval_record,
+    decision_from_row,
     trade_from_row,
 )
 from bullpit.journal.models import Request as RequestRow
@@ -117,17 +119,6 @@ def _not_found(what: str) -> Refusal:
 def _utc(moment: datetime) -> datetime:
     """The journal keeps naive UTC datetimes; the API sends them with their zone."""
     return moment.replace(tzinfo=UTC)
-
-
-def _decision_of(row: ApprovalRecord) -> ApprovalDecision:
-    return ApprovalDecision(
-        decision=row.decision,
-        recommended_shares=row.recommended_shares,
-        approved_shares=row.approved_shares,
-        decided_by=row.decided_by,
-        latest_price=None if row.latest_price is None else Decimal(row.latest_price),
-        confirmations=row.confirmations or [],
-    )
 
 
 def _trade_out(row: TradeRecord) -> TradeOut:
@@ -300,7 +291,7 @@ def create_app(
                 **_summary(row, approval),
                 stage=stage,
                 debate_round=debate_round,
-                approval=None if approval is None else _decision_of(approval),
+                approval=None if approval is None else decision_from_row(approval),
                 trade=None if trade is None else _trade_out(trade),
             )
 
@@ -382,7 +373,7 @@ def create_app(
                     ),
                 )
             if recorded is not None:  # the process died before the order step: finish it (FR-10)
-                return resume(request_id, _decision_of(recorded))
+                return resume(request_id, decision_from_row(recorded))
             if report_row is None:
                 raise _not_found("report")
             report = Report.model_validate(report_row.report)
@@ -415,18 +406,7 @@ def create_app(
 
             with sessions() as session:
                 session.add(
-                    ApprovalRecord(
-                        request_id=request_id,
-                        decision=result.decision,
-                        recommended_shares=result.recommended_shares,
-                        approved_shares=result.approved_shares,
-                        decided_by=result.decided_by,
-                        decided_at=now().replace(tzinfo=None),
-                        latest_price=None
-                        if result.latest_price is None
-                        else str(result.latest_price),
-                        confirmations=list(result.confirmations),
-                    )
+                    approval_record(request_id, result, decided_at=now().replace(tzinfo=None))
                 )
                 try:
                     session.commit()

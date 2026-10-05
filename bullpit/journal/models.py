@@ -14,6 +14,7 @@ from typing import Any
 from sqlalchemy import JSON, ForeignKey, Index, UniqueConstraint, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
+from bullpit.approval.gate import ApprovalDecision
 from bullpit.domain import Trade
 
 
@@ -172,6 +173,14 @@ class ApprovalRecord(Base):
     decided_at: Mapped[datetime]  # backtest: the close of `as_of`; owner: wall-clock UTC
     latest_price: Mapped[str | None] = mapped_column(default=None)  # the staleness check's price
     confirmations: Mapped[list[str] | None] = mapped_column(JSON, default=None)
+    # M11.1: what was approved, so the order can be rebuilt from this row (FR-18).
+    order_type: Mapped[str] = mapped_column(default="market", server_default="market")
+    entry_price: Mapped[str | None] = mapped_column(default=None)
+    limit_price: Mapped[str | None] = mapped_column(default=None)
+    stop_loss: Mapped[str | None] = mapped_column(default=None)
+    take_profit: Mapped[str | None] = mapped_column(default=None)
+    seen_price: Mapped[str | None] = mapped_column(default=None)
+    overrides: Mapped[list[str] | None] = mapped_column(JSON, default=None)
 
 
 class TradeRecord(Base):
@@ -202,6 +211,8 @@ class TradeRecord(Base):
     order_id: Mapped[str | None] = mapped_column(default=None)  # Alpaca IDs, live only
     stop_order_id: Mapped[str | None] = mapped_column(default=None)
     take_profit_order_id: Mapped[str | None] = mapped_column(default=None)
+    order_type: Mapped[str] = mapped_column(default="market", server_default="market")  # M11.1
+    limit_price: Mapped[str | None] = mapped_column(default=None)
 
 
 class EquitySnapshot(Base):
@@ -233,6 +244,51 @@ def _decimal(value: str | None) -> Decimal | None:
     return None if value is None else Decimal(value)
 
 
+def approval_record(
+    request_id: str, decision: ApprovalDecision, *, decided_at: datetime
+) -> ApprovalRecord:
+    """A new `approvals` row for `decision`; money as `Decimal` strings."""
+    return ApprovalRecord(
+        request_id=request_id,
+        decision=decision.decision,
+        recommended_shares=decision.recommended_shares,
+        approved_shares=decision.approved_shares,
+        decided_by=decision.decided_by,
+        decided_at=decided_at,
+        latest_price=None if decision.latest_price is None else str(decision.latest_price),
+        confirmations=list(decision.confirmations),
+        order_type=decision.order_type,
+        entry_price=None if decision.entry_price is None else str(decision.entry_price),
+        limit_price=None if decision.limit_price is None else str(decision.limit_price),
+        stop_loss=None if decision.stop_loss is None else str(decision.stop_loss),
+        take_profit=None if decision.take_profit is None else str(decision.take_profit),
+        seen_price=None if decision.seen_price is None else str(decision.seen_price),
+        overrides=list(decision.overrides),
+    )
+
+
+def decision_from_row(row: ApprovalRecord) -> ApprovalDecision:
+    """The `ApprovalDecision` an `approvals` row records. Rows from before M11.1
+    read as market orders with no entry or overrides."""
+    return ApprovalDecision.model_validate(
+        {
+            "decision": row.decision,
+            "recommended_shares": row.recommended_shares,
+            "approved_shares": row.approved_shares,
+            "decided_by": row.decided_by,
+            "latest_price": _decimal(row.latest_price),
+            "confirmations": row.confirmations or [],
+            "order_type": row.order_type,
+            "entry_price": _decimal(row.entry_price),
+            "limit_price": _decimal(row.limit_price),
+            "stop_loss": _decimal(row.stop_loss),
+            "take_profit": _decimal(row.take_profit),
+            "seen_price": _decimal(row.seen_price),
+            "overrides": row.overrides or [],
+        }
+    )
+
+
 def trade_from_row(row: TradeRecord) -> Trade:
     """The broker `Trade` a `trades` row records (backtest and live)."""
     return Trade.model_validate(
@@ -254,6 +310,8 @@ def trade_from_row(row: TradeRecord) -> Trade:
             "order_id": row.order_id,
             "stop_order_id": row.stop_order_id,
             "take_profit_order_id": row.take_profit_order_id,
+            "order_type": row.order_type,
+            "limit_price": _decimal(row.limit_price),
         }
     )
 
@@ -288,6 +346,8 @@ def trade_record(request_id: str, trade: Trade, *, run_id: str | None = None) ->
         order_id=trade.order_id,
         stop_order_id=trade.stop_order_id,
         take_profit_order_id=trade.take_profit_order_id,
+        order_type=trade.order_type,
+        limit_price=None if trade.limit_price is None else str(trade.limit_price),
         **trade_fields(trade),
     )
 

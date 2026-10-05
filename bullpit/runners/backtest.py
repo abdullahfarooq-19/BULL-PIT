@@ -34,12 +34,12 @@ from bullpit.errors import ConfigError, LLMUnavailable, QuotaExhausted
 from bullpit.eval.baselines import Policy, bullpit_wanted_buy
 from bullpit.graph import Deps, build_graph
 from bullpit.journal.models import (
-    ApprovalRecord,
     BacktestRun,
     EquitySnapshot,
     RecommendationRecord,
     Request,
     TradeRecord,
+    approval_record,
     trade_fields,
     trade_from_row,
     trade_record,
@@ -392,13 +392,8 @@ def _run_week(
             add_request_rows(session, row, result=result, error=None, settings=settings)
         for request_id, decision in approvals.items():
             session.add(
-                ApprovalRecord(
-                    request_id=request_id,
-                    decision=decision.decision,
-                    recommended_shares=decision.recommended_shares,
-                    approved_shares=decision.approved_shares,
-                    decided_by=decision.decided_by,
-                    decided_at=session_close(day).replace(tzinfo=None),
+                approval_record(
+                    request_id, decision, decided_at=session_close(day).replace(tzinfo=None)
                 )
             )
         for request_id, trade in submitted.items():
