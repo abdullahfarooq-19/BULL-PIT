@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Revision 8: D15 to D18 added (report explanations, order box, cancel, advanced mode); M7 accepted, M8 built and awaiting acceptance, M11.1 in progress |
+| **Status** | Revision 8: D15 to D18 added (report explanations, order box, cancel, advanced mode); M7 accepted, M8 built and awaiting acceptance, M11.1 built and merged |
 | **Changes in revision 8** | D15 to D18 added ([§3](#3-deviations-from-the-architecture-roadmap)); M11.1 added to §4 and §5 and its report-page and order-box part taken out of M9; §8 gets the `0008` row; `architecture.md` v2.7 |
 | **Changes in revision 7** | D14 added ([§3](#3-deviations-from-the-architecture-roadmap)); §2.1 frontend row, §2.3 layout (`api/` → `bullpit/api/`), §8 M8 row and §10.1 C6 updated; `architecture.md` v2.6 |
 | **Changes in revision 6** | D13 added ([§3](#3-deviations-from-the-architecture-roadmap)), Q5 answered ([§10](#10-decisions-log)); M7 becomes a pilot evaluation; `architecture.md` v2.5 |
