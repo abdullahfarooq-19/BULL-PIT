@@ -1,59 +1,70 @@
 "use client";
 
-import type { Order } from "@/api/client";
 import { AnimatedMoney } from "@/components/report/animated-money";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { money, moneyFromCents, signedPct, toCents } from "@/lib/format";
 
 const HEIGHT = 240;
 
-/** The bracket order drawn to proportion: take-profit on top, the reference price in
- *  the middle, the stop at the bottom. The bull zone and the bear zone are as tall as
- *  the reward and the risk, so the 1.5 reward-to-risk is visible. The ladder never moves
- *  when the share count changes; only the dollar figures do. */
-export function BracketLadder({ order, shares }: { order: Order; shares: number }) {
-  const reference = toCents(order.reference_price);
-  const stop = toCents(order.stop_loss);
-  const target = toCents(order.take_profit);
-  const rewardShare = ((target - reference) / (target - stop)) * 100;
-  const gain = (target - reference) * shares;
-  const loss = (reference - stop) * shares;
+/** The bracket order drawn to proportion: take-profit on top, the entry price in the
+ *  middle, the stop at the bottom. The bull zone and the bear zone are as tall as the
+ *  reward and the risk, so the reward-to-risk is visible. It draws the numbers the API
+ *  priced (M11.1-FR-10); the gain and loss are the API's totals for the chosen size. */
+export function BracketLadder({
+  entry,
+  entryLabel,
+  stop,
+  target,
+  gain,
+  loss,
+}: {
+  entry: string;
+  entryLabel: string;
+  stop: string;
+  target: string;
+  gain: string | null;
+  loss: string | null;
+}) {
+  const reference = toCents(entry);
+  const stopCents = toCents(stop);
+  const targetCents = toCents(target);
+  const rewardShare = ((targetCents - reference) / (targetCents - stopCents)) * 100;
 
   return (
     <figure
       className="space-y-2"
-      aria-label={`Bracket order: take-profit ${money(order.take_profit)}, reference ${money(order.reference_price)}, stop-loss ${money(order.stop_loss)}`}
+      aria-label={`Bracket order: take-profit ${money(target)}, ${entryLabel.toLowerCase()} ${money(entry)}, stop-loss ${money(stop)}`}
     >
       <div className="flex flex-col overflow-hidden rounded-lg border border-line" style={{ height: HEIGHT }}>
         <Zone
           tone="bull"
           height={`${rewardShare}%`}
           title="Take-profit"
-          price={order.take_profit}
-          perShare={target - reference}
-          fromReference={(target - reference) / reference}
-          tip={<>Maximum gain at {shares} shares: <AnimatedMoney cents={gain} /></>}
+          price={target}
+          perShare={targetCents - reference}
+          fromReference={(targetCents - reference) / reference}
+          tip={gain ? <>Maximum gain: <AnimatedMoney cents={toCents(gain)} /></> : "Waiting for a price"}
         />
         <div className="flex items-center justify-between border-y border-dashed border-muted-foreground/50 bg-surface-2 px-3 py-1 text-xs">
-          <span className="text-muted-foreground">Reference</span>
-          <span className="num font-medium">{money(order.reference_price)}</span>
+          <span className="text-muted-foreground">{entryLabel}</span>
+          <span className="num font-medium">{money(entry)}</span>
         </div>
         <Zone
           tone="bear"
           height={`${100 - rewardShare}%`}
           title="Stop-loss"
-          price={order.stop_loss}
-          perShare={stop - reference}
-          fromReference={(stop - reference) / reference}
-          tip={<>Maximum loss at {shares} shares: <AnimatedMoney cents={loss} /></>}
+          price={stop}
+          perShare={stopCents - reference}
+          fromReference={(stopCents - reference) / reference}
+          tip={loss ? <>Maximum loss: <AnimatedMoney cents={toCents(loss)} /></> : "Waiting for a price"}
         />
       </div>
       <figcaption className="grid grid-cols-2 gap-3 text-sm">
         <span className="text-bull">
-          Gain <span className="font-medium"><AnimatedMoney cents={gain} /></span>
+          Gain <span className="num font-medium">{gain ? money(gain) : "—"}</span>
         </span>
         <span className="text-right text-bear">
-          Loss <span className="font-medium"><AnimatedMoney cents={loss} /></span>
+          Loss <span className="num font-medium">{loss ? money(loss) : "—"}</span>
         </span>
       </figcaption>
     </figure>

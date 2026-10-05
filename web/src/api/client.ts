@@ -11,6 +11,8 @@ export type Order = NonNullable<Report["order"]>;
 export type RequestDetail = Schemas["RequestDetail"];
 export type RequestSummary = Schemas["RequestSummary"];
 export type TradeOut = Schemas["TradeOut"];
+export type OrderPreview = Schemas["OrderPreview"];
+export type OrderPreviewBody = Schemas["OrderPreviewBody"];
 
 /** A refusal or failure, carrying the API's own message and its stable `code`. */
 export class ApiError extends Error {

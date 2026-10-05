@@ -77,7 +77,7 @@ export default function RequestPage({ params }: { params: Promise<{ id: string }
       <ReportView report={report.data} />
       {order && (
         <div className="lg:sticky lg:top-20">
-          <OrderPanel report={report.data} order={order} detail={request} onChanged={detail.reload} />
+          <OrderPanel order={order} detail={request} onChanged={detail.reload} />
         </div>
       )}
     </div>
