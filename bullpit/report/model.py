@@ -34,6 +34,22 @@ class DebateSummary(BaseModel, frozen=True):
     unsupported_points: int
 
 
+class ClaimView(BaseModel, frozen=True):
+    text: str
+    evidence_ids: list[str]
+    unsupported: bool  # cites no registered evidence ID (M4-FR-3)
+
+
+class DebateTurnView(BaseModel, frozen=True):
+    """One debate turn as the live report keeps it (M11.1-FR-8)."""
+
+    side: Literal["bull", "bear"]
+    round: int
+    claims: list[ClaimView]
+    concessions: list[str]
+    conviction: float
+
+
 class AttemptRow(BaseModel, frozen=True):
     """Section 6: one trader attempt and what the risk manager did with it."""
 
@@ -102,3 +118,8 @@ class Report(BaseModel, frozen=True):
     # 9 data notes
     data_notes: DataNotes
     prose_source: ProseSource
+    # Live reports only (M11.1-FR-6, FR-8); `None` on every other report, including
+    # those stored before M11.1.
+    analyst_summaries: dict[str, str] | None = None  # by analyst; none for a flagged one
+    board_score: float | None = None  # the code-computed signals score
+    debate_turns: list[DebateTurnView] | None = None

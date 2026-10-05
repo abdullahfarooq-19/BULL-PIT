@@ -15,7 +15,7 @@ from bullpit.report.builder import market_context, report_node
 from bullpit.report.model import Report
 from bullpit.state import RequestState
 from tests.agents.conftest import ScriptedLLM, make_reply
-from tests.report.test_builder import _state
+from tests.report.test_builder import _state, _technical_failed
 
 _FIRST_LINE = "You are the report writer"
 _RETRY_MARK = "Your previous draft used numbers or IDs that are not in the report"
@@ -40,9 +40,14 @@ def _prose(**overrides: str) -> str:
 
 
 def _run(
-    llm: ScriptedLLM, settings: Settings, sessions: sessionmaker[Session], kind: str = "buy"
+    llm: ScriptedLLM,
+    settings: Settings,
+    sessions: sessionmaker[Session],
+    kind: str = "buy",
+    mode: str = "backtest",
+    state: RequestState | None = None,
 ) -> tuple[Report, dict[str, object], RequestState]:
-    state = _state(kind)
+    state = (state or _state(kind)).model_copy(update={"mode": mode})
     result = report_node(
         state,
         settings=settings,
@@ -129,3 +134,119 @@ def test_fallback_warning_does_not_unmask_quoted_text(
     assert report.prose_source == "fallback"
     assert any("40%" in warning for warning in report.data_notes.warnings)
     assert report.reason_detail == "Bear case is [?] stronger."
+
+
+_SUMMARIES = {
+    "technical_summary": "Prices sit above their averages, so the trend is up (T1).",
+    "fundamentals_summary": "Profits are steady but not growing fast (F1).",
+    "sentiment_summary": "Recent headlines lean negative (S1).",
+}
+
+
+def test_live_report_gets_the_analyst_paragraphs(
+    settings: Settings, sessions: sessionmaker[Session]
+) -> None:
+    llm = ScriptedLLM()
+    llm.queue(_FIRST_LINE, make_reply(_prose(**_SUMMARIES)))
+
+    report, _, _ = _run(llm, settings, sessions, mode="live")
+
+    assert report.prose_source == "llm"
+    assert report.analyst_summaries == {
+        "technical": _SUMMARIES["technical_summary"],
+        "fundamentals": _SUMMARIES["fundamentals_summary"],
+        "sentiment": _SUMMARIES["sentiment_summary"],
+    }
+    (prompt,) = llm.prompts
+    assert "technical_summary" in prompt and "at most 110 words" in prompt
+
+
+def test_a_backtest_report_asks_for_no_paragraphs(
+    settings: Settings, sessions: sessionmaker[Session]
+) -> None:
+    llm = ScriptedLLM()
+    llm.queue(_FIRST_LINE, make_reply(_prose()))
+
+    report, _, _ = _run(llm, settings, sessions, mode="backtest")
+
+    assert len(llm.prompts) == 1  # the same single call as before M11.1
+    assert "_summary" not in llm.prompts[0]
+    assert report.analyst_summaries is None and report.debate_turns is None
+
+
+def test_a_failed_analyst_is_not_asked_about(
+    settings: Settings, sessions: sessionmaker[Session]
+) -> None:
+    llm = ScriptedLLM()
+    llm.queue(_FIRST_LINE, make_reply(_prose(**_SUMMARIES)))
+
+    report, _, _ = _run(
+        llm, settings, sessions, mode="live", state=_technical_failed(_state("buy"))
+    )
+
+    assert "technical_summary" not in llm.prompts[0]
+    assert report.analyst_summaries is not None
+    assert list(report.analyst_summaries) == ["fundamentals", "sentiment"]
+
+
+@pytest.mark.parametrize("bad", ["The price will reach $200 soon (T1).", "A clear trend (T99)."])
+def test_an_invented_number_or_id_in_a_paragraph_is_retried_then_replaced(
+    settings: Settings, sessions: sessionmaker[Session], bad: str
+) -> None:
+    llm = ScriptedLLM()
+    llm.queue(_FIRST_LINE, make_reply(_prose(**{**_SUMMARIES, "technical_summary": bad})))
+    llm.queue(_FIRST_LINE, make_reply(_prose(**{**_SUMMARIES, "technical_summary": bad})))
+
+    report, _, _ = _run(llm, settings, sessions, mode="live")
+
+    assert report.prose_source == "fallback"
+    assert report.analyst_summaries is not None
+    assert report.analyst_summaries["technical"] == (
+        "Technical: bullish with confidence 0.60. See the facts below."
+    )
+    assert _RETRY_MARK in llm.prompts[1] and ("$200" in llm.prompts[1] or "T99" in llm.prompts[1])
+
+
+def test_a_clean_retry_is_used_for_a_paragraph(
+    settings: Settings, sessions: sessionmaker[Session]
+) -> None:
+    llm = ScriptedLLM()
+    llm.queue(_FIRST_LINE, make_reply(_prose(**{**_SUMMARIES, "technical_summary": "Up $99."})))
+    llm.queue(_FIRST_LINE, make_reply(_prose(**_SUMMARIES)))
+
+    report, _, _ = _run(llm, settings, sessions, mode="live")
+
+    assert report.prose_source == "retry"
+    assert report.analyst_summaries is not None
+    assert report.analyst_summaries["technical"] == _SUMMARIES["technical_summary"]
+
+
+def test_a_long_paragraph_is_kept_and_warned_about(
+    settings: Settings, sessions: sessionmaker[Session]
+) -> None:
+    long = " ".join(["steady"] * 120)
+    llm = ScriptedLLM()
+    llm.queue(_FIRST_LINE, make_reply(_prose(**{**_SUMMARIES, "sentiment_summary": long})))
+
+    report, result, _ = _run(llm, settings, sessions, mode="live")
+
+    assert report.analyst_summaries is not None
+    assert report.analyst_summaries["sentiment"] == long  # never truncated
+    assert report.data_notes.warnings == ["sentiment summary is over 110 words"]
+    assert result["warnings"] == report.data_notes.warnings
+
+
+def test_a_missed_paragraph_is_written_by_code(
+    settings: Settings, sessions: sessionmaker[Session]
+) -> None:
+    llm = ScriptedLLM()
+    llm.queue(_FIRST_LINE, make_reply(_prose(**{**_SUMMARIES, "technical_summary": ""})))
+
+    report, _, _ = _run(llm, settings, sessions, mode="live")
+
+    assert report.prose_source == "llm"
+    assert report.analyst_summaries is not None
+    assert report.analyst_summaries["technical"] == (
+        "Technical: bullish with confidence 0.60. See the facts below."
+    )
+    assert report.analyst_summaries["sentiment"] == _SUMMARIES["sentiment_summary"]

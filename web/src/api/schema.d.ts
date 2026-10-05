@@ -415,6 +415,15 @@ export interface components {
             /** Last Equity */
             last_equity: string | null;
         };
+        /** ClaimView */
+        ClaimView: {
+            /** Text */
+            text: string;
+            /** Evidence Ids */
+            evidence_ids: string[];
+            /** Unsupported */
+            unsupported: boolean;
+        };
         /**
          * DataNotes
          * @description Section 9.
@@ -452,6 +461,25 @@ export interface components {
             bear_conviction: number | null;
             /** Unsupported Points */
             unsupported_points: number;
+        };
+        /**
+         * DebateTurnView
+         * @description One debate turn as the live report keeps it (M11.1-FR-8).
+         */
+        DebateTurnView: {
+            /**
+             * Side
+             * @enum {string}
+             */
+            side: "bull" | "bear";
+            /** Round */
+            round: number;
+            /** Claims */
+            claims: components["schemas"]["ClaimView"][];
+            /** Concessions */
+            concessions: string[];
+            /** Conviction */
+            conviction: number;
         };
         /** EquityPoint */
         EquityPoint: {
@@ -699,6 +727,14 @@ export interface components {
              * @enum {string}
              */
             prose_source: "llm" | "retry" | "fallback" | "none";
+            /** Analyst Summaries */
+            analyst_summaries?: {
+                [key: string]: string;
+            } | null;
+            /** Board Score */
+            board_score?: number | null;
+            /** Debate Turns */
+            debate_turns?: components["schemas"]["DebateTurnView"][] | null;
         };
         /** RequestDetail */
         RequestDetail: {

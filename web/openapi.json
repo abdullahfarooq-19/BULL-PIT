@@ -1198,6 +1198,32 @@
         ],
         "title": "BacktestRunOut"
       },
+      "ClaimView": {
+        "properties": {
+          "text": {
+            "type": "string",
+            "title": "Text"
+          },
+          "evidence_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Evidence Ids"
+          },
+          "unsupported": {
+            "type": "boolean",
+            "title": "Unsupported"
+          }
+        },
+        "type": "object",
+        "required": [
+          "text",
+          "evidence_ids",
+          "unsupported"
+        ],
+        "title": "ClaimView"
+      },
       "DataNotes": {
         "properties": {
           "models": {
@@ -1333,6 +1359,50 @@
         ],
         "title": "DebateSummary",
         "description": "Section 5."
+      },
+      "DebateTurnView": {
+        "properties": {
+          "side": {
+            "type": "string",
+            "enum": [
+              "bull",
+              "bear"
+            ],
+            "title": "Side"
+          },
+          "round": {
+            "type": "integer",
+            "title": "Round"
+          },
+          "claims": {
+            "items": {
+              "$ref": "#/components/schemas/ClaimView"
+            },
+            "type": "array",
+            "title": "Claims"
+          },
+          "concessions": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Concessions"
+          },
+          "conviction": {
+            "type": "number",
+            "title": "Conviction"
+          }
+        },
+        "type": "object",
+        "required": [
+          "side",
+          "round",
+          "claims",
+          "concessions",
+          "conviction"
+        ],
+        "title": "DebateTurnView",
+        "description": "One debate turn as the live report keeps it (M11.1-FR-8)."
       },
       "EquityPoint": {
         "properties": {
@@ -2091,6 +2161,45 @@
               "none"
             ],
             "title": "Prose Source"
+          },
+          "analyst_summaries": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Analyst Summaries"
+          },
+          "board_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Board Score"
+          },
+          "debate_turns": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DebateTurnView"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Debate Turns"
           }
         },
         "type": "object",
