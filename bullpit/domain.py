@@ -68,6 +68,7 @@ class SizedOrder(BaseModel, frozen=True):
 
 TradeStatus = Literal["pending", "open", "closed", "cancelled", "open_at_end"]
 ExitReason = Literal["stop", "target", "window_end", "manual"]
+OrderType = Literal["market", "limit"]
 
 
 class Trade(BaseModel, frozen=True):
@@ -90,6 +91,8 @@ class Trade(BaseModel, frozen=True):
     order_id: str | None = None  # Alpaca IDs; None in the simulated broker (M8 D-M8-20)
     stop_order_id: str | None = None
     take_profit_order_id: str | None = None
+    order_type: OrderType = "market"  # M11.1: a limit trade waits at `limit_price`
+    limit_price: Decimal | None = None
 
     @computed_field  # type: ignore[prop-decorator]
     @property

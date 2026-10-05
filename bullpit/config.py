@@ -106,6 +106,9 @@ class Settings(BaseSettings):
     checkpoint_db_path: Path = Path("checkpoints.db")
     results_dir: Path = Path("docs/results")
 
+    # --- Report explanations and the order box (M11.1) ---------------------
+    report_paragraph_max_words: int = 110
+
     # --- LLM gateway (M2) -------------------------------------------------
     llm_reasoning_effort_small: str = "low"
     llm_reasoning_effort_large: str = "low"

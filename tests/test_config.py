@@ -58,6 +58,11 @@ class TestM8SettingDefaults:
         assert settings.results_dir == Path("docs/results")
 
 
+class TestM11SettingDefaults:
+    def test_report_paragraph_default(self) -> None:
+        assert _settings().report_paragraph_max_words == 110
+
+
 class TestM7SettingDefaults:
     def test_evaluation_defaults(self) -> None:
         settings = _settings()

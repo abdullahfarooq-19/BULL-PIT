@@ -87,6 +87,10 @@ Each task is about half a day or less, is one commit when the owner asks for com
 
 (Filled in by T-2 (the baseline suite count and time), T-3, T-13, T-17, T-18 and T-19.)
 
+### T-2: baseline (2026-10-05, branch `m11.1-report-and-order-box`, before any code change)
+
+`uv run pytest -q`: **323 passed in 43.9 s** (M8's figure confirmed). After T-2's one new test: 324 passed in 43.1 s; ruff, ruff format, mypy clean. AC-17(a) compares every later task against this.
+
 ## Retrospective
 
 (Written in T-20.)
