@@ -5,6 +5,14 @@ import type { NextConfig } from "next";
 const apiPort = process.env.API_PORT ?? "8000";
 
 const nextConfig: NextConfig = {
+  // History and Trades became one page (M11.2) and the Backtests page was removed (M11.4):
+  // the old URLs keep working.
+  async redirects() {
+    return [
+      { source: "/requests", destination: "/trades", permanent: false },
+      { source: "/backtests", destination: "/trades", permanent: false },
+    ];
+  },
   async rewrites() {
     return [{ source: "/api/:path*", destination: `http://127.0.0.1:${apiPort}/:path*` }];
   },

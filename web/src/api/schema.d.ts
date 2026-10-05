@@ -162,15 +162,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/backtests": {
+    "/account": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** List Backtests */
-        get: operations["list_backtests_backtests_get"];
+        /** Get Account */
+        get: operations["get_account_account_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -179,15 +179,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/backtests/{run_id}/results": {
+    "/market": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Backtest */
-        get: operations["get_backtest_backtests__run_id__results_get"];
+        /** Get Market */
+        get: operations["get_market_market_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -196,15 +196,15 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/results": {
+    "/history": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Results */
-        get: operations["get_results_results_get"];
+        /** List History */
+        get: operations["list_history_history_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -213,18 +213,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/results/files/{name}": {
+    "/portfolio": {
         parameters: {
             query?: never;
             header?: never;
             path?: never;
             cookie?: never;
         };
-        /** Get Result Image */
-        get: operations["get_result_image_results_files__name__get"];
+        /** Get Portfolio */
+        get: operations["get_portfolio_portfolio_get"];
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/watchlist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Watchlist */
+        get: operations["list_watchlist_watchlist_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/watchlist/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Like Stock */
+        put: operations["like_stock_watchlist__symbol__put"];
+        post?: never;
+        /** Unlike Stock */
+        delete: operations["unlike_stock_watchlist__symbol__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -234,6 +269,33 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * AccountOut
+         * @description The broker account card (M11.2-FR-1, FR-2).
+         */
+        AccountOut: {
+            /** Broker */
+            broker: string;
+            /**
+             * Account Type
+             * @constant
+             */
+            account_type: "demo";
+            /** Account Number */
+            account_number: string;
+            /** Status */
+            status: string;
+            /** Equity */
+            equity: string;
+            /** Cash */
+            cash: string;
+            /** Last Equity */
+            last_equity: string;
+            /** Day Change */
+            day_change: string;
+            /** Day Change Pct */
+            day_change_pct: string | null;
+        };
         /** ApprovalDecision */
         ApprovalDecision: {
             /**
@@ -338,82 +400,6 @@ export interface components {
             review_reason: string | null;
             /** Review Clamped */
             review_clamped: boolean;
-        };
-        /** BacktestDetail */
-        BacktestDetail: {
-            /** Id */
-            id: string;
-            /** Policy */
-            policy: string;
-            /** Tickers */
-            tickers: string[];
-            /**
-             * Start Date
-             * Format: date
-             */
-            start_date: string;
-            /**
-             * End Date
-             * Format: date
-             */
-            end_date: string;
-            /** Weeks */
-            weeks: number;
-            /** Status */
-            status: string;
-            /** Status Reason */
-            status_reason: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /** Last Equity */
-            last_equity: string | null;
-            /** Seed */
-            seed: number;
-            /** Starting Cash */
-            starting_cash: string;
-            /** Models */
-            models: {
-                [key: string]: string;
-            };
-            /** Trades */
-            trades: components["schemas"]["TradeOut"][];
-            /** Equity */
-            equity: components["schemas"]["EquityPoint"][];
-        };
-        /** BacktestRunOut */
-        BacktestRunOut: {
-            /** Id */
-            id: string;
-            /** Policy */
-            policy: string;
-            /** Tickers */
-            tickers: string[];
-            /**
-             * Start Date
-             * Format: date
-             */
-            start_date: string;
-            /**
-             * End Date
-             * Format: date
-             */
-            end_date: string;
-            /** Weeks */
-            weeks: number;
-            /** Status */
-            status: string;
-            /** Status Reason */
-            status_reason: string | null;
-            /**
-             * Created At
-             * Format: date-time
-             */
-            created_at: string;
-            /** Last Equity */
-            last_equity: string | null;
         };
         /** ClaimView */
         ClaimView: {
@@ -524,6 +510,68 @@ export interface components {
             detail?: components["schemas"]["ValidationError"][];
         };
         /**
+         * HistoryRow
+         * @description One live request on the Trades History page (M11.2-FR-9 to FR-12). The
+         *     numbers come from the trade, else the approval, else the report's plan.
+         */
+        HistoryRow: {
+            /** Id */
+            id: string;
+            /** Ticker */
+            ticker: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * As Of
+             * Format: date
+             */
+            as_of: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "analysing" | "decision_pending" | "rejected_by_you" | "order_placed" | "waiting_at_limit" | "open" | "closed" | "cancelled" | "expired" | "no_decision" | "no_trade" | "rejected_by_check" | "failed";
+            /** Outcome */
+            outcome: string | null;
+            /** Status Reason */
+            status_reason: string | null;
+            /** Expires At */
+            expires_at: string | null;
+            /** Order Type */
+            order_type: string | null;
+            /** Overrides */
+            overrides: string[];
+            /** Shares */
+            shares: number | null;
+            /** Plan Price */
+            plan_price: string | null;
+            /** Entry Price */
+            entry_price: string | null;
+            /** Limit Price */
+            limit_price: string | null;
+            /** Take Profit */
+            take_profit: string | null;
+            /** Stop Loss */
+            stop_loss: string | null;
+            /** Exit Price */
+            exit_price: string | null;
+            /** Exit Date */
+            exit_date: string | null;
+            /** Exit Reason */
+            exit_reason: string | null;
+            /** Cancel Reason */
+            cancel_reason: string | null;
+            /** Pnl */
+            pnl: string | null;
+            /** Current Price */
+            current_price: string | null;
+            /** Unrealised Pnl */
+            unrealised_pnl: string | null;
+        };
+        /**
          * MarketContext
          * @description Section 8.
          */
@@ -540,6 +588,24 @@ export interface components {
             vix_label: ("low" | "normal" | "high") | null;
             /** Explanation */
             explanation: string;
+        };
+        /**
+         * MarketOut
+         * @description Whether the US market is open and when it next changes (M11.3-FR-12).
+         */
+        MarketOut: {
+            /** Is Open */
+            is_open: boolean;
+            /**
+             * Next Open
+             * Format: date-time
+             */
+            next_open: string;
+            /**
+             * Next Close
+             * Format: date-time
+             */
+            next_close: string;
         };
         /** NewRequest */
         NewRequest: {
@@ -663,6 +729,26 @@ export interface components {
              * @default false
              */
             confirm_overrides: boolean;
+        };
+        /**
+         * PortfolioStats
+         * @description Realised statistics of the live journal (M11.2-FR-18).
+         */
+        PortfolioStats: {
+            /** Approved */
+            approved: number;
+            /** Rejected */
+            rejected: number;
+            /** Ongoing */
+            ongoing: number;
+            /** Closed */
+            closed: number;
+            /** Total Profit */
+            total_profit: string;
+            /** Total Loss */
+            total_loss: string;
+            /** Net Pnl */
+            net_pnl: string;
         };
         /** PreviewWarning */
         PreviewWarning: {
@@ -820,13 +906,6 @@ export interface components {
             order_type: string | null;
             /** Overrides */
             overrides: string[];
-        };
-        /** ResultsPage */
-        ResultsPage: {
-            /** Markdown */
-            markdown: string;
-            /** Images */
-            images: string[];
         };
         /** Signal */
         Signal: {
@@ -1022,6 +1101,17 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** WatchlistStock */
+        WatchlistStock: {
+            /** Symbol */
+            symbol: string;
+            /** Name */
+            name: string;
+            /** Liked */
+            liked: boolean;
+            /** Liked At */
+            liked_at: string | null;
         };
     };
     responses: never;
@@ -1436,7 +1526,7 @@ export interface operations {
             };
         };
     };
-    list_backtests_backtests_get: {
+    get_account_account_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -1451,17 +1541,126 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BacktestRunOut"][];
+                    "application/json": components["schemas"]["AccountOut"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
                 };
             };
         };
     };
-    get_backtest_backtests__run_id__results_get: {
+    get_market_market_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketOut"];
+                };
+            };
+            /** @description Bad Gateway */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    list_history_history_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryRow"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_portfolio_portfolio_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortfolioStats"];
+                };
+            };
+        };
+    };
+    list_watchlist_watchlist_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WatchlistStock"][];
+                };
+            };
+        };
+    };
+    like_stock_watchlist__symbol__put: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                run_id: string;
+                symbol: string;
             };
             cookie?: never;
         };
@@ -1473,7 +1672,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BacktestDetail"];
+                    "application/json": components["schemas"]["WatchlistStock"];
                 };
             };
             /** @description Not Found */
@@ -1496,41 +1695,12 @@ export interface operations {
             };
         };
     };
-    get_results_results_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ResultsPage"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["Problem"];
-                };
-            };
-        };
-    };
-    get_result_image_results_files__name__get: {
+    unlike_stock_watchlist__symbol__delete: {
         parameters: {
             query?: never;
             header?: never;
             path: {
-                name: string;
+                symbol: string;
             };
             cookie?: never;
         };
@@ -1541,7 +1711,9 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["WatchlistStock"];
+                };
             };
             /** @description Not Found */
             404: {

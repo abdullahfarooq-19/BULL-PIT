@@ -495,21 +495,27 @@
         }
       }
     },
-    "/backtests": {
+    "/account": {
       "get": {
-        "summary": "List Backtests",
-        "operationId": "list_backtests_backtests_get",
+        "summary": "Get Account",
+        "operationId": "get_account_account_get",
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "items": {
-                    "$ref": "#/components/schemas/BacktestRunOut"
-                  },
-                  "type": "array",
-                  "title": "Response List Backtests Backtests Get"
+                  "$ref": "#/components/schemas/AccountOut"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Bad Gateway",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
                 }
               }
             }
@@ -517,18 +523,49 @@
         }
       }
     },
-    "/backtests/{run_id}/results": {
+    "/market": {
       "get": {
-        "summary": "Get Backtest",
-        "operationId": "get_backtest_backtests__run_id__results_get",
+        "summary": "Get Market",
+        "operationId": "get_market_market_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketOut"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Bad Gateway",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/history": {
+      "get": {
+        "summary": "List History",
+        "operationId": "list_history_history_get",
         "parameters": [
           {
-            "name": "run_id",
-            "in": "path",
-            "required": true,
+            "name": "limit",
+            "in": "query",
+            "required": false,
             "schema": {
-              "type": "string",
-              "title": "Run Id"
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 200,
+              "title": "Limit"
             }
           }
         ],
@@ -538,7 +575,90 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/BacktestDetail"
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/HistoryRow"
+                  },
+                  "title": "Response List History History Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/portfolio": {
+      "get": {
+        "summary": "Get Portfolio",
+        "operationId": "get_portfolio_portfolio_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioStats"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/watchlist": {
+      "get": {
+        "summary": "List Watchlist",
+        "operationId": "list_watchlist_watchlist_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/WatchlistStock"
+                  },
+                  "type": "array",
+                  "title": "Response List Watchlist Watchlist Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/watchlist/{symbol}": {
+      "put": {
+        "summary": "Like Stock",
+        "operationId": "like_stock_watchlist__symbol__put",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Symbol"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistStock"
                 }
               }
             }
@@ -564,54 +684,31 @@
             }
           }
         }
-      }
-    },
-    "/results": {
-      "get": {
-        "summary": "Get Results",
-        "operationId": "get_results_results_get",
+      },
+      "delete": {
+        "summary": "Unlike Stock",
+        "operationId": "unlike_stock_watchlist__symbol__delete",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Symbol"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "Successful Response",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ResultsPage"
+                  "$ref": "#/components/schemas/WatchlistStock"
                 }
               }
             }
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Problem"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/results/files/{name}": {
-      "get": {
-        "summary": "Get Result Image",
-        "operationId": "get_result_image_results_files__name__get",
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "title": "Name"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Successful Response"
           },
           "404": {
             "content": {
@@ -639,6 +736,73 @@
   },
   "components": {
     "schemas": {
+      "AccountOut": {
+        "properties": {
+          "broker": {
+            "type": "string",
+            "title": "Broker"
+          },
+          "account_type": {
+            "type": "string",
+            "const": "demo",
+            "title": "Account Type"
+          },
+          "account_number": {
+            "type": "string",
+            "title": "Account Number"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "equity": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Equity"
+          },
+          "cash": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Cash"
+          },
+          "last_equity": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Last Equity"
+          },
+          "day_change": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Day Change"
+          },
+          "day_change_pct": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Day Change Pct"
+          }
+        },
+        "type": "object",
+        "required": [
+          "broker",
+          "account_type",
+          "account_number",
+          "status",
+          "equity",
+          "cash",
+          "last_equity",
+          "day_change",
+          "day_change_pct"
+        ],
+        "title": "AccountOut",
+        "description": "The broker account card (M11.2-FR-1, FR-2)."
+      },
       "ApprovalDecision": {
         "properties": {
           "decision": {
@@ -1005,199 +1169,6 @@
         "title": "AttemptRow",
         "description": "Section 6: one trader attempt and what the risk manager did with it."
       },
-      "BacktestDetail": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "policy": {
-            "type": "string",
-            "title": "Policy"
-          },
-          "tickers": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Tickers"
-          },
-          "start_date": {
-            "type": "string",
-            "format": "date",
-            "title": "Start Date"
-          },
-          "end_date": {
-            "type": "string",
-            "format": "date",
-            "title": "End Date"
-          },
-          "weeks": {
-            "type": "integer",
-            "title": "Weeks"
-          },
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "status_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Status Reason"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "last_equity": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Equity"
-          },
-          "seed": {
-            "type": "integer",
-            "title": "Seed"
-          },
-          "starting_cash": {
-            "type": "string",
-            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
-            "title": "Starting Cash"
-          },
-          "models": {
-            "additionalProperties": {
-              "type": "string"
-            },
-            "type": "object",
-            "title": "Models"
-          },
-          "trades": {
-            "items": {
-              "$ref": "#/components/schemas/TradeOut"
-            },
-            "type": "array",
-            "title": "Trades"
-          },
-          "equity": {
-            "items": {
-              "$ref": "#/components/schemas/EquityPoint"
-            },
-            "type": "array",
-            "title": "Equity"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "policy",
-          "tickers",
-          "start_date",
-          "end_date",
-          "weeks",
-          "status",
-          "status_reason",
-          "created_at",
-          "last_equity",
-          "seed",
-          "starting_cash",
-          "models",
-          "trades",
-          "equity"
-        ],
-        "title": "BacktestDetail"
-      },
-      "BacktestRunOut": {
-        "properties": {
-          "id": {
-            "type": "string",
-            "title": "Id"
-          },
-          "policy": {
-            "type": "string",
-            "title": "Policy"
-          },
-          "tickers": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Tickers"
-          },
-          "start_date": {
-            "type": "string",
-            "format": "date",
-            "title": "Start Date"
-          },
-          "end_date": {
-            "type": "string",
-            "format": "date",
-            "title": "End Date"
-          },
-          "weeks": {
-            "type": "integer",
-            "title": "Weeks"
-          },
-          "status": {
-            "type": "string",
-            "title": "Status"
-          },
-          "status_reason": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Status Reason"
-          },
-          "created_at": {
-            "type": "string",
-            "format": "date-time",
-            "title": "Created At"
-          },
-          "last_equity": {
-            "anyOf": [
-              {
-                "type": "string",
-                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Equity"
-          }
-        },
-        "type": "object",
-        "required": [
-          "id",
-          "policy",
-          "tickers",
-          "start_date",
-          "end_date",
-          "weeks",
-          "status",
-          "status_reason",
-          "created_at",
-          "last_equity"
-        ],
-        "title": "BacktestRunOut"
-      },
       "ClaimView": {
         "properties": {
           "text": {
@@ -1506,6 +1477,280 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "HistoryRow": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "ticker": {
+            "type": "string",
+            "title": "Ticker"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date",
+            "title": "As Of"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "analysing",
+              "decision_pending",
+              "rejected_by_you",
+              "order_placed",
+              "waiting_at_limit",
+              "open",
+              "closed",
+              "cancelled",
+              "expired",
+              "no_decision",
+              "no_trade",
+              "rejected_by_check",
+              "failed"
+            ],
+            "title": "State"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "status_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Status Reason"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "order_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Order Type"
+          },
+          "overrides": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Overrides"
+          },
+          "shares": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shares"
+          },
+          "plan_price": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plan Price"
+          },
+          "entry_price": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Entry Price"
+          },
+          "limit_price": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit Price"
+          },
+          "take_profit": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Take Profit"
+          },
+          "stop_loss": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stop Loss"
+          },
+          "exit_price": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Price"
+          },
+          "exit_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Date"
+          },
+          "exit_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exit Reason"
+          },
+          "cancel_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancel Reason"
+          },
+          "pnl": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pnl"
+          },
+          "current_price": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Price"
+          },
+          "unrealised_pnl": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unrealised Pnl"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "ticker",
+          "created_at",
+          "as_of",
+          "state",
+          "outcome",
+          "status_reason",
+          "expires_at",
+          "order_type",
+          "overrides",
+          "shares",
+          "plan_price",
+          "entry_price",
+          "limit_price",
+          "take_profit",
+          "stop_loss",
+          "exit_price",
+          "exit_date",
+          "exit_reason",
+          "cancel_reason",
+          "pnl",
+          "current_price",
+          "unrealised_pnl"
+        ],
+        "title": "HistoryRow",
+        "description": "One live request on the Trades History page (M11.2-FR-9 to FR-12). The\nnumbers come from the trade, else the approval, else the report's plan."
+      },
       "MarketContext": {
         "properties": {
           "spy_close": {
@@ -1584,6 +1829,32 @@
         ],
         "title": "MarketContext",
         "description": "Section 8."
+      },
+      "MarketOut": {
+        "properties": {
+          "is_open": {
+            "type": "boolean",
+            "title": "Is Open"
+          },
+          "next_open": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Next Open"
+          },
+          "next_close": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Next Close"
+          }
+        },
+        "type": "object",
+        "required": [
+          "is_open",
+          "next_open",
+          "next_close"
+        ],
+        "title": "MarketOut",
+        "description": "Whether the US market is open and when it next changes (M11.3-FR-12)."
       },
       "NewRequest": {
         "properties": {
@@ -1970,6 +2241,53 @@
         ],
         "title": "OwnerDecision",
         "description": "The approval request body."
+      },
+      "PortfolioStats": {
+        "properties": {
+          "approved": {
+            "type": "integer",
+            "title": "Approved"
+          },
+          "rejected": {
+            "type": "integer",
+            "title": "Rejected"
+          },
+          "ongoing": {
+            "type": "integer",
+            "title": "Ongoing"
+          },
+          "closed": {
+            "type": "integer",
+            "title": "Closed"
+          },
+          "total_profit": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Profit"
+          },
+          "total_loss": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Total Loss"
+          },
+          "net_pnl": {
+            "type": "string",
+            "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+            "title": "Net Pnl"
+          }
+        },
+        "type": "object",
+        "required": [
+          "approved",
+          "rejected",
+          "ongoing",
+          "closed",
+          "total_profit",
+          "total_loss",
+          "net_pnl"
+        ],
+        "title": "PortfolioStats",
+        "description": "Realised statistics of the live journal (M11.2-FR-18)."
       },
       "PreviewWarning": {
         "properties": {
@@ -2519,27 +2837,6 @@
           "overrides"
         ],
         "title": "RequestSummary"
-      },
-      "ResultsPage": {
-        "properties": {
-          "markdown": {
-            "type": "string",
-            "title": "Markdown"
-          },
-          "images": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "title": "Images"
-          }
-        },
-        "type": "object",
-        "required": [
-          "markdown",
-          "images"
-        ],
-        "title": "ResultsPage"
       },
       "Signal": {
         "properties": {
@@ -3153,6 +3450,42 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "WatchlistStock": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "liked": {
+            "type": "boolean",
+            "title": "Liked"
+          },
+          "liked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Liked At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "name",
+          "liked",
+          "liked_at"
+        ],
+        "title": "WatchlistStock"
       }
     }
   }

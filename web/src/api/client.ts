@@ -13,6 +13,11 @@ export type RequestSummary = Schemas["RequestSummary"];
 export type TradeOut = Schemas["TradeOut"];
 export type OrderPreview = Schemas["OrderPreview"];
 export type OrderPreviewBody = Schemas["OrderPreviewBody"];
+export type HistoryRow = Schemas["HistoryRow"];
+export type AccountOut = Schemas["AccountOut"];
+export type MarketOut = Schemas["MarketOut"];
+export type PortfolioStats = Schemas["PortfolioStats"];
+export type WatchlistStock = Schemas["WatchlistStock"];
 
 /** A refusal or failure, carrying the API's own message and its stable `code`. */
 export class ApiError extends Error {

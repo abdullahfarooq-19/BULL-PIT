@@ -140,8 +140,14 @@ uv run bullpit serve            # the API, on API_PORT (default 8000)
 cd web && npm ci && npm run build && npm run start    # the dashboard, http://127.0.0.1:3000
 ```
 
-1. **Start a request.** Type a ticker on the first page (or press `Ctrl K`). The
-   graph runs for about a minute and shows its progress.
+The sidebar has three pages: **Account & Wallet** (the home page), **Trades History** and
+**Portfolio**. Backtest results are not on the dashboard: read [`docs/results/results.md`](docs/results/results.md).
+
+1. **Start a request.** On Account & Wallet, type a ticker, or pick a stock from the
+   S&P 100 watchlist (star it to keep it under *Liked stocks*; picking a stock only fills
+   the ticker box), then press Start (or press `Ctrl K`). The page also shows the Alpaca
+   paper account's balance, refreshed every 5 seconds. The graph runs for about a minute
+   and shows its progress; the analysis appears in Trades History while it runs.
 2. **Read the report.** Each analyst has a plain-language paragraph, a lean bar (bearish
    fills left, bullish fills right, length is its confidence, a failed analyst says it
    could not run) and every fact it used. The debate is explained round by round, with
@@ -164,17 +170,21 @@ cd web && npm ci && npm run build && npm run start    # the dashboard, http://12
    own stop and take-profit and a share count above the recommendation. A warning stays
    on screen. **Your cash is the only hard limit**; going past the 10% cap or the 1% risk
    limit is allowed after a confirmation that lists each override, and every override is
-   recorded and badged *Override* on History and Trades. The report is not edited: it
+   recorded and badged *Override* on Trades History. The report is not edited: it
    still describes the original plan.
 5. **The order.** An approved buy becomes one bracket order (entry, stop-loss and
    take-profit, good till cancelled) on the Alpaca **paper** account, built from the
    recorded approval. Its ID comes from the request, so sending the approval twice still
    makes one order. A limit order stays pending until it fills or **you cancel it** (the
-   *Cancel order* button on the report page and on Trades); a filled trade is never
+   *Cancel order* button on the report page and on Trades History); a filled trade is never
    touched by the system.
-6. **Fills.** The **Trades** page and `uv run bullpit fill-check` record the entry, the
+6. **Fills.** The **Trades History** page (one row per analysis, from *Analysing* through
+   *Decision pending* to *Open* and *Closed*; open a row for its full analysis) and `uv run bullpit fill-check` record the entry, the
    exit and the profit or loss from Alpaca, and any position you close by hand as
    *manual*. The fill check runs whenever the dashboard opens; there is no scheduler.
+
+**Portfolio** shows the equity chart and the realised statistics (approved, rejected,
+ongoing and closed trades, total profit, total loss, net P&L).
 
 The web app's API types are generated from the API's OpenAPI schema
 (`npm run gen:api`, run by CI, which fails if the committed files are stale).

@@ -1,5 +1,6 @@
 "use client";
 
+import { ArrowLeft } from "lucide-react";
 import Link from "next/link";
 import { use, useEffect } from "react";
 
@@ -15,9 +16,22 @@ import { useLoad } from "@/lib/use-load";
 const POLL_MS = 2000;
 
 /** Report and decide (M8-FR-22): progress while the request runs, then the report and,
- *  for a buy that waits, the owner's decision. */
+ *  for a buy that waits, the owner's decision. The link back is on every state (M11.2-FR-17). */
 export default function RequestPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  return (
+    <div className="space-y-6">
+      <Button asChild variant="ghost" size="sm" className="-ml-2">
+        <Link href="/trades">
+          <ArrowLeft aria-hidden /> Trades History
+        </Link>
+      </Button>
+      <RequestView id={id} />
+    </div>
+  );
+}
+
+function RequestView({ id }: { id: string }) {
   const detail = useLoad(`detail-${id}`, () =>
     unwrap(api.GET("/requests/{request_id}", { params: { path: { request_id: id } } })),
   );
@@ -76,7 +90,7 @@ export default function RequestPage({ params }: { params: Promise<{ id: string }
     <div className="grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_22rem]">
       <ReportView report={report.data} />
       {order && (
-        <div className="lg:sticky lg:top-20">
+        <div className="lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:overscroll-contain">
           <OrderPanel order={order} detail={request} onChanged={detail.reload} />
         </div>
       )}

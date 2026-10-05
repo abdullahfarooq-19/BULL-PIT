@@ -17,16 +17,15 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session, sessionmaker
 
-from bullpit.api.app import create_app
+from bullpit.api.app import create_app, history_state, portfolio_stats, unrealised_pnl
 from bullpit.approval.gate import ApprovalDecision
-from bullpit.broker.alpaca import LiveOrder
+from bullpit.broker.alpaca import LiveOrder, MarketClock
 from bullpit.config import Settings
 from bullpit.domain import Account, Asset, Trade
 from bullpit.errors import BrokerRejected, DataUnavailable
 from bullpit.graph import ApprovalWiring, Deps, build_graph
 from bullpit.journal.models import (
     ApprovalRecord,
-    BacktestRun,
     EquitySnapshot,
     Request,
     TradeRecord,
@@ -50,7 +49,6 @@ def settings(settings: Settings, tmp_path: Path) -> Settings:
             "llm_tpm_limit": 1_000_000,
             "llm_rpm_limit": 1_000,
             "checkpoint_db_path": tmp_path / "checkpoints.db",
-            "results_dir": tmp_path / "results",
         }
     )
 
@@ -120,7 +118,7 @@ def _rows(sessions: sessionmaker[Session], model: type[Any]) -> list[Any]:
         return list(session.query(model).all())
 
 
-def test_endpoints_happy_path(env: Env, tmp_path: Path) -> None:
+def test_endpoints_happy_path(env: Env) -> None:
     client = env.client()
     request_id, report = env.waiting_report(client)
     env.price = Decimal(report["order"]["reference_price"]) * Decimal("1.03")  # stale
@@ -146,52 +144,6 @@ def test_endpoints_happy_path(env: Env, tmp_path: Path) -> None:
     summary = client.post("/fill-check").json()
     assert summary["snapshots"] == 1
     assert client.get("/equity").json() == [{"date": "2024-07-05", "equity": "100000"}]
-
-    assert client.get("/backtests").json() == []
-    assert client.get("/backtests/none/results").status_code == 404
-    assert client.get("/results").json()["code"] == "not_found"
-    _seed_backtest(env.sessions)
-    (run,) = client.get("/backtests").json()
-    assert Decimal(run["last_equity"]) == Decimal("100000")
-    assert client.get(f"/backtests/{run['id']}/results").json()["equity"][0]["equity"] == "100000"
-    results = tmp_path / "results"
-    results.mkdir()
-    (results / "results.md").write_text("# Results", encoding="utf-8")
-    (results / "equity.png").write_bytes(b"png")
-    assert client.get("/results").json() == {"markdown": "# Results", "images": ["equity.png"]}
-    assert client.get("/results/files/equity.png").content == b"png"
-    assert client.get("/results/files/results.md").status_code == 404
-
-
-def _seed_backtest(sessions: sessionmaker[Session]) -> None:
-    with sessions() as session:
-        session.add(
-            BacktestRun(
-                id="run00001",
-                created_at=naive_utc_now(),
-                tickers=["AAPL"],
-                start_date=date(2024, 7, 1),
-                end_date=date(2024, 7, 5),
-                weeks=1,
-                seed=1,
-                starting_cash="100000",
-                models={"small": "s", "large": "l"},
-                assets=[],
-                git_commit="abc",
-                status="completed",
-            )
-        )
-        session.flush()
-        session.add(
-            EquitySnapshot(
-                run_id="run00001",
-                day=date(2024, 7, 5),
-                cash="100000",
-                positions_value="0",
-                equity="100000",
-            )
-        )
-        session.commit()
 
 
 def test_restart_keeps_waiting_request(env: Env) -> None:
@@ -764,3 +716,206 @@ def _seed_pending(
         session.flush()
         session.add(trade_record(f"seed-{ticker}{tag}", trade))
         session.commit()
+
+
+# --- M11.2: Trades History, account, portfolio, watchlist ----------------------------------
+
+
+@pytest.mark.parametrize(
+    ("status", "outcome", "decision", "trade", "order_type", "state"),
+    [
+        ("running", None, None, None, None, "analysing"),
+        ("failed", None, None, None, None, "failed"),
+        ("rejected", None, None, None, None, "rejected_by_check"),
+        ("awaiting_approval", "buy", None, None, None, "decision_pending"),
+        ("completed", "buy", "approved", "open", "market", "open"),
+        ("completed", "buy", "approved", "closed", "market", "closed"),
+        ("completed", "buy", "approved", "cancelled", "limit", "cancelled"),
+        ("completed", "buy", "approved", "pending", "limit", "waiting_at_limit"),
+        ("completed", "buy", "approved", "pending", "market", "order_placed"),
+        ("completed", "buy", "approved", None, "market", "order_placed"),
+        ("completed", "buy", "rejected", None, None, "rejected_by_you"),
+        ("expired", "buy", None, None, None, "expired"),
+        ("completed", "buy", None, None, None, "no_decision"),
+        ("completed", "no_trade", None, None, None, "no_trade"),
+    ],
+)
+def test_history_state(
+    status: str,
+    outcome: str | None,
+    decision: str | None,
+    trade: str | None,
+    order_type: str | None,
+    state: str,
+) -> None:
+    assert history_state(status, outcome, decision, trade, order_type) == state
+
+
+def test_portfolio_stats() -> None:
+    stats = portfolio_stats(
+        ["approved", "approved", "approved", "rejected"],
+        [
+            ("closed", Decimal("120.50")),
+            ("closed", Decimal("-45.25")),
+            ("closed", Decimal("-10.00")),
+            ("closed", Decimal("0")),
+            ("open", None),
+            ("pending", None),
+            ("cancelled", None),
+        ],
+    )
+
+    assert (stats.approved, stats.rejected, stats.ongoing, stats.closed) == (3, 1, 2, 4)
+    assert (stats.total_profit, stats.total_loss, stats.net_pnl) == (
+        Decimal("120.50"),
+        Decimal("-55.25"),
+        Decimal("65.25"),
+    )
+
+
+def _history(client: TestClient) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = client.get("/history").json()
+    return rows
+
+
+def test_history_follows_a_request(env: Env) -> None:
+    client = env.client()
+    request_id, report = env.waiting_report(client)
+    order = report["order"]
+
+    (row,) = _history(client)  # waiting for a decision: the plan is already on the row
+    assert (row["id"], row["state"], row["shares"]) == (
+        request_id,
+        "decision_pending",
+        order["shares"],
+    )
+    assert (row["take_profit"], row["stop_loss"]) == (order["take_profit"], order["stop_loss"])
+    assert row["plan_price"] == order["reference_price"] and row["expires_at"] is not None
+    assert row["entry_price"] is None and row["pnl"] is None
+
+    assert _approve(client, request_id).status_code == 200
+    (row,) = _history(client)
+    assert (row["state"], row["order_type"], row["entry_price"]) == ("order_placed", "market", None)
+
+    _filled(env, env.broker.submitted[0])
+    assert client.post("/fill-check").status_code == 200
+    (row,) = _history(client)
+    assert row["state"] == "open"
+    assert Decimal(row["entry_price"]) == round_cent(Decimal(order["reference_price"]))
+
+    second_id, _ = env.waiting_report(client)  # a rejected report keeps the plan too
+    assert (
+        client.post(f"/requests/{second_id}/approval", json={"decision": "reject"}).status_code
+        == 200
+    )
+    newest, older = _history(client)
+    assert (newest["id"], newest["state"], newest["shares"]) == (
+        second_id,
+        "rejected_by_you",
+        order["shares"],
+    )
+    assert older["state"] == "open"
+
+    stats = client.get("/portfolio").json()
+    assert (stats["approved"], stats["rejected"], stats["ongoing"], stats["closed"]) == (1, 1, 1, 0)
+
+
+def test_account_is_the_brokers_own_figures(env: Env) -> None:
+    client = env.client()
+
+    account = client.get("/account").json()
+
+    assert (account["broker"], account["account_type"]) == ("Alpaca Paper", "demo")
+    assert account["account_number"] == "••••0087"  # only the last four show
+    assert (account["equity"], account["cash"], account["day_change"]) == (
+        "100000",
+        "100000",
+        "250",
+    )
+    assert Decimal(account["day_change_pct"]).quantize(Decimal("0.01")) == Decimal("0.25")
+
+
+def test_account_refused_when_alpaca_is_down(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    def down() -> None:
+        raise BrokerRejected("get_account failed")
+
+    monkeypatch.setattr(env.broker, "get_account_summary", down)
+
+    refused = env.client().get("/account")
+
+    assert refused.status_code == 502 and refused.json()["code"] == "broker_unavailable"
+
+
+def test_watchlist_likes_persist(env: Env) -> None:
+    client = env.client()
+    stocks = client.get("/watchlist").json()
+    assert len(stocks) > 50 and not any(stock["liked"] for stock in stocks)
+
+    liked = client.put("/watchlist/AAPL").json()
+    assert (liked["symbol"], liked["liked"]) == ("AAPL", True) and liked["liked_at"] is not None
+    assert (
+        client.put("/watchlist/AAPL").json()["liked_at"] == liked["liked_at"]
+    )  # repeating is harmless
+
+    restarted = env.client()  # a second app over the same journal is a restart
+    assert [s["symbol"] for s in restarted.get("/watchlist").json() if s["liked"]] == ["AAPL"]
+
+    assert restarted.delete("/watchlist/AAPL").json()["liked"] is False
+    assert not any(s["liked"] for s in restarted.get("/watchlist").json())
+    assert restarted.put("/watchlist/NOTASTOCK").status_code == 404
+
+
+# --- M11.3: live P&L and market status -------------------------------------------------------
+
+
+def test_unrealised_pnl_to_the_cent() -> None:
+    assert unrealised_pnl(Decimal("100.10"), Decimal("101.337"), 20) == Decimal("24.74")
+    assert unrealised_pnl(Decimal("100.10"), Decimal("98.00"), 20) == Decimal("-42.00")
+
+
+def test_open_trade_shows_its_live_pnl(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = env.client()
+    request_id, _ = env.waiting_report(client)
+    assert _approve(client, request_id).status_code == 200
+    _filled(env, env.broker.submitted[0])
+    assert client.post("/fill-check").status_code == 200
+    (trade,) = client.get("/trades").json()
+    entry, shares = Decimal(trade["entry_price"]), trade["shares"]
+
+    env.broker.prices = {"AAPL": entry + 2, "MSFT": Decimal("999")}
+    (row,) = _history(client)
+    assert row["state"] == "open" and Decimal(row["current_price"]) == entry + 2
+    assert Decimal(row["unrealised_pnl"]) == 2 * shares and row["pnl"] is None
+
+    env.broker.prices = {"AAPL": entry - 1}  # the next read follows the price
+    assert Decimal(_history(client)[0]["unrealised_pnl"]) == -shares
+
+    second_id, _ = env.waiting_report(client)  # a row that is not open has no live figures
+    newest, _ = _history(client)
+    assert (newest["id"], newest["current_price"], newest["unrealised_pnl"]) == (
+        second_id,
+        None,
+        None,
+    )
+
+    def down() -> dict[str, Decimal]:
+        raise BrokerRejected("list positions failed")
+
+    monkeypatch.setattr(env.broker, "last_prices", down)  # the table still loads
+    rows = _history(client)
+    assert [r["state"] for r in rows] == ["decision_pending", "open"]
+    assert rows[1]["current_price"] is None and rows[1]["unrealised_pnl"] is None
+
+
+def test_market_status(env: Env, monkeypatch: pytest.MonkeyPatch) -> None:
+    client = env.client()
+    assert client.get("/market").status_code == 502  # the clock can't be read
+
+    env.broker.clock = MarketClock(
+        is_open=False,
+        next_open=datetime(2024, 7, 8, 13, 30, tzinfo=UTC),
+        next_close=datetime(2024, 7, 8, 20, 0, tzinfo=UTC),
+    )
+    market = client.get("/market").json()
+    assert market["is_open"] is False
+    assert market["next_open"].startswith("2024-07-08T13:30:00")
