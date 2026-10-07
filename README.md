@@ -186,6 +186,34 @@ The sidebar has three pages: **Account & Wallet** (the home page), **Trades Hist
 **Portfolio** shows the equity chart and the realised statistics (approved, rejected,
 ongoing and closed trades, total profit, total loss, net P&L).
 
+### Screenshots
+
+**Account & Wallet**: the paper account's balance, the ticker box and the watchlist.
+
+![Account & Wallet](docs/images/account-wallet.jpg)
+
+**Trades History**: one row per analysis, with live profit and loss on open trades.
+
+![Trades History](docs/images/trades-history.jpg)
+
+**Portfolio**: the equity chart and the realised statistics.
+
+![Portfolio](docs/images/portfolio.jpg)
+
+**The report**: the recommendation, the board score, each analyst's facts and the order box.
+
+![Report: recommendation, technical analyst and order box](docs/images/report-analysts-technical.jpg)
+
+![Report: fundamentals and sentiment analysts](docs/images/report-analysts-sentiment.jpg)
+
+**The debate**: how it reached its conclusion, then each round with its evidence IDs.
+
+![Debate: conclusion](docs/images/report-debate-conclusion.jpg)
+
+![Debate: round 1](docs/images/report-debate-round-1.jpg)
+
+![Debate: round 2](docs/images/report-debate-round-2.jpg)
+
 The web app's API types are generated from the API's OpenAPI schema
 (`npm run gen:api`, run by CI, which fails if the committed files are stale).
 The equity chart uses TradingView Lightweight Charts.

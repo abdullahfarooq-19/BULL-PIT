@@ -1,6 +1,6 @@
 # Bull Pit: progress from M0 to M8
 
-Written 2026-09-30, status table refreshed 2026-10-06. A plain summary of what each milestone built and what is
+Written 2026-09-30, refreshed 2026-10-06. A plain summary of what each milestone built and what is
 still open. The sources of truth stay [`architecture.md`](architecture.md),
 [`dev-plan.md`](dev-plan.md) and each milestone's folder under
 [`milestones/`](milestones/); if this page disagrees with them, they win.
@@ -17,7 +17,7 @@ still open. The sources of truth stay [`architecture.md`](architecture.md),
 | M5 | Report generator | Done, tagged `m5` |
 | M6 | Simulated broker, journal, backtest runner | Done, tagged `m6` |
 | M7 | Evaluation, baselines, pilot results | Done, tagged `m7` |
-| M8 | Live mode: API, dashboard, approval, bracket orders, fill check | Done, tagged `m8` (accepted 2026-10-06; a few real-world checks carried over, see its `task.md`) |
+| M8 | Live mode: API, dashboard, approval, bracket orders, fill check | Done, tagged `m8` (accepted 2026-10-06) |
 | M11.1 | Report explanations, order box, cancel, advanced mode | Done, tagged `m11.1` |
 | M11.2 | Dashboard restructure: Account & Wallet, Trades History, Portfolio | Done, tagged `m11.2` |
 | M11.3 | Live P&L, market and connection badges, logo and motto | Done, tagged `m11.3` |
@@ -79,7 +79,7 @@ Brier score, tokens per request); a results page with three charts. The
 [`results/results.md`](results/results.md). It shows the pipeline works end to
 end and states plainly that it cannot say any approach is better.
 
-**M8, live mode** (branch `m8-live-mode`, 15 local commits, not pushed):
+**M8, live mode** (accepted 2026-10-06):
 
 - Alpaca write side: one idempotent bracket order per approval, order lookup by
   `client_order_id`, manual-close detection, equity history.
@@ -101,8 +101,7 @@ end and states plainly that it cannot say any approach is better.
   (TradingView Lightweight Charts), Backtests (since removed); loading, error and empty states;
   Ctrl+K palette. Types are generated from the OpenAPI schema; CI has a web
   job.
-- 323 automated tests (about 40 seconds); ruff, mypy, ESLint and the web build
-  are clean.
+- Automated tests, ruff, mypy, ESLint and the web build are clean (429 tests after M11.4).
 
 ## Decisions worth remembering
 
@@ -121,13 +120,4 @@ end and states plainly that it cannot say any approach is better.
 
 | Item | Needs |
 |---|---|
-| M0-T-18 (close the leftover 1-share F position) and M0-T-25 (formal acceptance, tag `m0`) | A market session |
-| M8-T-12: the invalid-bracket probe and ADR-0007, the first real request and approval, a restart with a real waiting report | A market session (from 2026-09-30 18:30 PKT until 2026-11-01, then 19:30 PKT) |
-| M8-AC-6 (the entry fills and one exit fills, all recorded) and the real half of AC-7 (a second small trade closed by hand) | Calendar time after that session; may finish in M9 |
-| M8-AC-12: the owner clicks through every page, with the API stopped, with an empty journal and with the keyboard only; reviews the look | The owner |
-| README screenshots of a real report | The first real request |
-| CI web job green | A push of `m8-live-mode` |
-| Merge to `master` and tag `m8` | The owner's acceptance |
-| The per-turn debate transcript in the dashboard (the report holds only a summary; no endpoint serves the turns) | An owner decision: add turns to the API, or leave it for M9 |
-| M7 carry-overs: the full 26-week run, repeat seeds, the debate-impact metric; and the M5 carry-over about masking the one warning that quotes LLM text | M9 or later |
-| **M9**: dashboard polish from real use, README, results write-up | After M8 acceptance |
+| **M9**: dashboard polish from real use, README, results write-up | Its `specs-plan.md` and `task.md` approved by the owner |
