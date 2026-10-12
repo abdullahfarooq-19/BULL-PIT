@@ -42,10 +42,6 @@ class QuotaExhausted(BullPitError):
     """The LLM gateway's daily token budget for a model is used up (used from M2)."""
 
 
-class ValidationFailed(BullPitError):
-    """An LLM reply failed schema validation after its retry (used from M2)."""
-
-
 class PromptTooLarge(BullPitError):
     """A rendered prompt's estimated size exceeds the per-minute token limit
     (used from M2). Raised before any network call.
