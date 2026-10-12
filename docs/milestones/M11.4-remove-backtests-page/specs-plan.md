@@ -30,3 +30,7 @@ The dashboard keeps only the live tool: Account & Wallet, Trades History and Por
 
 ## 5. Plan and verification
 Docs first (D21, v2.9, this file), then the API and tests, then the web app, then the checks: pytest, ruff, mypy, ESLint, build; a browser pass on a second API and dev server (three pages, redirect, no console errors, `/api/backtests` is 404); the real `docs/results/results.md` is still there.
+
+## Retrospective
+
+Built 2026-10-06, merged to `master` with M11.2 and M11.3 (merge `e89ad90`) and tagged `m11.4`. The page and its four endpoints are gone; `/backtests` redirects to Trades History; `bullpit eval` still writes `docs/results/results.md`. Nothing carried over.

@@ -73,7 +73,7 @@ validated and bounded it.
 
 | Milestone | What it built | State |
 |---|---|---|
-| M0 | Foundations: scaffold, paper-only guard, `doctor`, CI, spikes | Built, **not tagged**: two items need a market session |
+| M0 | Foundations: scaffold, paper-only guard, `doctor`, CI, spikes | Done, tagged `m0` |
 | M1 | Data layer, date guard, cache | Done, tagged `m1` |
 | M2 | LLM gateway | Done, tagged `m2` |
 | M3 | Request check, three analysts, signals board, brain | Done, tagged `m3` |
@@ -81,13 +81,13 @@ validated and bounded it.
 | M5 | Report generator | Done, tagged `m5` |
 | M6 | Simulated broker, journal, backtest runner | Done, tagged `m6` |
 | M7 | Evaluation, baselines, pilot results | Done, tagged `m7` |
-| M8 | Live mode: API, dashboard, approval, bracket orders, fill check | Built on branch `m8-live-mode` (15 local commits, **not pushed**); 323 tests pass |
-| M9 | Dashboard polish, README, results write-up | Not started |
+| M8 | Live mode: API, dashboard, approval, bracket orders, fill check | Done, tagged `m8` (accepted 2026-10-06) |
+| M11.1 to M11.4 | Report explanations and order box; dashboard restructure; live P&L and market status; Backtests page removed | Done, tagged `m11.1` to `m11.4` |
+| M9 | Dashboard polish, README, results write-up | In progress |
 
-What is left is listed in [`progress.md`](progress.md). The main blockers are a
-market session (to close the leftover 1-share F position from M0, and to place
-the first real approved order), a push of `m8-live-mode` so CI can run its web
-job, and the owner's acceptance.
+Status refreshed 2026-10-12; the rest of this page is as written on 2026-09-30
+unless a note says otherwise. What each milestone built:
+[`progress.md`](progress.md).
 
 ### The pilot result
 
@@ -725,6 +725,8 @@ to use which style.
 
 ## 12. Review findings
 
+*Status on 2026-10-12: findings 1 and 2 are closed (M8 was accepted and real orders were placed and approved; M0 was accepted and tagged). Finding 5 is closed by M11.1 (the report carries the debate turns). Findings 3, 4 and 7 stand as written; finding 6 is history.*
+
 1. **M8 is not pushed.** 15 local commits, and the CI web job has never run. A
    disk problem would lose it, and CI could still find something. Pushing is
    cheap.
@@ -747,6 +749,8 @@ to use which style.
    rests on LLM output. That is a fair design choice, but it is worth knowing.
 
 ## 13. Candidate changes
+
+*Status on 2026-10-12: candidates 1, 3 and 6 were built in M11.1 (analyst paragraphs, the debate narrative, the debate turns in the report). The others were not built.*
 
 These are ideas only. Nothing here is decided or built. Under the project's own
 rules, each one changes system behaviour, so each needs a new deviation in

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | T-1 to T-11 done and T-12's README and retrospective written (2026-09-29); waiting for the owner's acceptance, then push, CI, merge and tag `m5` |
+| **Status** | T-1 to T-11 done and T-12's README and retrospective written (2026-09-29); accepted by the owner, merged to `master` and tagged `m5` |
 | **Date** | 2026-09-29 |
 | **Specs and plan** | [`specs-plan.md`](specs-plan.md) (reviewed and corrected 2026-09-29, §7.1; necessary testing, D-M5-11) |
 | **Branch** | `m5-report`, from `master` **after M4 is merged and tagged `m4`** (M4-T-15) |
@@ -24,7 +24,7 @@ Each task is about half a day or less, is one commit when the owner asks for com
 | [x] | M5-T-9 | **CLI.** `bullpit request` prints `=== REPORT ===` and `render_markdown(result.report)` after the M4 output. Add the buy-with-report case to `test_cli.py` | `bullpit/cli.py`, `tests/test_cli.py` | FR-11; AC-10 | `test_cli.py` passes | 2621d53 |
 | [x] | M5-T-10 | **Graph tests.** Existing path tests each check `state.report` and one `reports` row. New: a request-check rejection (no LLM call, report `rejected`, no market fetch); `LLMUnavailable` on `report.md` (fallback, `completed`); `QuotaExhausted` on `report.md` (`failed`, lock released) | `tests/test_graph.py` | AC-8 | All graph tests pass; whole suite under a minute | 2621d53 |
 | [x] | M5-T-11 | **Real runs, tracing, tokens.** Run `bullpit request` for JPM and AAPL `--mode backtest --as-of 2024-10-18`, XOM `--as-of 2024-07-12`, and SPY. Read each report; trace every number of the JPM report by hand; record each `prose_source`. Measure per-request tokens per model (FR-14); update architecture §14 and add revision v2.3; re-derive `llm_output_allowance_tokens` (and `test_config.py` if it asserts it); re-run one request to confirm nothing is flagged. Paste the evidence below | `docs/architecture.md`, `bullpit/config.py`, `.env.example`, this file | AC-2, AC-7; FR-14; C14 | Evidence pasted; four checks clean | 2bd8b4f |
-| [ ] | M5-T-12 | **Acceptance.** Add the report to the README quick start. Write the retrospective (tokens vs §14, `prose_source` rates, test count and suite time, carry-overs). Then, when the owner asks: push, CI green, merge to `master`, tag `m5` | `README.md`, this file | DoD §1.5 | Owner accepts | 2bd8b4f |
+| [x] | M5-T-12 | **Acceptance.** Add the report to the README quick start. Write the retrospective (tokens vs §14, `prose_source` rates, test count and suite time, carry-overs). Then, when the owner asks: push, CI green, merge to `master`, tag `m5` | `README.md`, this file | DoD §1.5 | Owner accepts | 2bd8b4f |
 
 ## Traceability
 

@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Accepted, with one probe still to run (see "Not yet observed") |
+| **Status** | Accepted; the AC-13 probe ran on 2026-10-12 (see "Addendum") |
 | **Date** | 2026-10-06 |
 | **Milestone** | M8 ([specs-plan](../milestones/M8-live-mode/specs-plan.md) S2, D-M8-28, D-M8-29, AC-13); changed by M11.1 (D16) |
 
@@ -28,9 +28,17 @@ Real Alpaca paper observations that support the rule:
 - **Exits repriced from the seen price are accepted in market hours.** On 2026-10-05 (US session open) a real GOOGL buy-now order was approved at a seen price of $345.09 with exits repriced from the plan's distances to $327.08 and $372.10. Alpaca accepted it, the entry filled at $345.11, the take-profit leg went `new` and the stop leg `held` at exactly those prices, and the fill check recorded it `open` (M11.1 task, T-17(b)).
 - **Legs survive the overnight close unchanged** (M0 A7; ADR-0002).
 
-## Not yet observed
+## Not yet observed (when this ADR was written; see the Addendum)
 
 AC-13 asked for one more real probe: a 1-share **market** bracket on a low-priced stock whose stop is **above** the current price, submitted through `AlpacaBroker` during a US session, to see whether Alpaca rejects it or accepts it and fills both sides at once. It needs the market open and was not run when this ADR was written (the market was closed). The limit-order evidence above shows Alpaca rejects a stop above the base price at submission; the market-order case, where the base price is the live price, is expected to behave the same but is unconfirmed. **Either outcome keeps the decision**: the gate (point 3) already keeps that case away from the dashboard. When the probe is run, its result is added here as an addendum.
+
+## Addendum: the AC-13 probe (2026-10-12)
+
+Run during the US session (Alpaca's clock said open) from a throwaway script through `AlpacaBroker.submit_bracket_order`, on the paper account. One share of F, latest price $12.01, a **market** bracket with the stop **above** the price ($12.37) and the take-profit above the stop ($12.73).
+
+- **Result: rejected at submission**, HTTP 422, code 42210000: `stop_loss.stop_price must be <= base_price - 0.01` (`base_price` 12.0101, the live price). `submit_bracket_order` raised `BrokerRejected("Alpaca rejected the order: …")`, which the API shows as the request's `failed` message.
+- **Nothing was filled or left open:** the order was never created, and a check afterwards found no open F orders.
+- **Meaning:** for a market entry Alpaca checks the legs against the live price exactly as it does against a limit for a limit entry (ADR-0008): the stop must be at least one cent below the base price. The "expected but unconfirmed" market-order case above is now confirmed. The decision stands, and the gate's price-between-exits check (D-M8-28) still keeps this case from the dashboard, so the rejection is a second line of defence rather than the first.
 
 ## Consequences
 

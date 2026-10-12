@@ -2,7 +2,8 @@
 
 | | |
 |---|---|
-| **Status** | Revision 10: D21 added (the Backtests page leaves the dashboard); revision 9 content follows. Earlier: Revision 9: D19 and D20 added (dashboard restructure, live balance and watchlist); M7 and M8 accepted, M11.1 to M11.4 built and merged |
+| **Status** | Revision 11: status only (M0 to M8 and M11.1 to M11.4 accepted and tagged; M9 in progress; M11.3 added to §4 and §5, no deviation). Revision 10: D21 added (the Backtests page leaves the dashboard); revision 9 content follows. Earlier: Revision 9: D19 and D20 added (dashboard restructure, live balance and watchlist); M7 and M8 accepted, M11.1 to M11.4 built and merged |
+| **Changes in revision 11** | Status only: M11.3 added to §4 and §5; M9's state recorded ([M9 specs-plan](milestones/M9-polish-readme-results/specs-plan.md)). No deviation, no `architecture.md` change |
 | **Changes in revision 10** | D21 added ([§3](#3-deviations-from-the-architecture-roadmap)); M11.4 added to §4 and §5; `architecture.md` v2.9 |
 | **Changes in revision 9** | D19 and D20 added ([§3](#3-deviations-from-the-architecture-roadmap)); M11.2 added to §4 and §5; §8 gets the `0009` row; `architecture.md` v2.8 |
 | **Changes in revision 8** | D15 to D18 added ([§3](#3-deviations-from-the-architecture-roadmap)); M11.1 added to §4 and §5 and its report-page and order-box part taken out of M9; §8 gets the `0008` row; `architecture.md` v2.7 |
@@ -143,7 +144,7 @@ Library versions are pinned in the lockfile. LangGraph, LiteLLM and alpaca-py ch
 - **Everything time-aware takes `as_of`.** No code calls `datetime.now()` or `date.today()` outside a single `Clock` object that's injected. Live mode uses a real clock; backtest uses a simulated one.
 - **Money handling.** Prices and dollar amounts use `Decimal` in sizing, exits, broker and journal code, and are rounded to cents at broker boundaries. Share counts are integers. Indicator maths may use floats (NumPy); values are converted at the boundary into sizing.
 - **Typed contracts between nodes.** Every piece of state that crosses a graph node is a Pydantic model. No loose dicts in the state.
-- **Errors.** One domain exception hierarchy (`BullPitError` → `DataUnavailable`, `LookaheadViolation`, `QuotaExhausted`, `BrokerRejected`, `ValidationFailed`, …). A failure in one analyst never crashes a request (Part 8). A failure in the broker or the date guard always stops loudly.
+- **Errors.** One domain exception hierarchy (`BullPitError` → `DataUnavailable`, `LookaheadViolation`, `QuotaExhausted`, `BrokerRejected`, …). A failure in one analyst never crashes a request (Part 8). A failure in the broker or the date guard always stops loudly.
 - **No magic numbers.** Every threshold in the architecture (1% risk, 10% cap, 2% staleness, 5% loss warning, 60 trading days, 150 words, 2 rounds, 2 vetoes, 0.05% slippage, ATR multipliers, 15 headlines, 7-day news window) is a named setting in `config.py`, and its default equals the architecture's value.
 
 ### 2.3 Repository layout
@@ -241,6 +242,7 @@ The architecture's M0–M9 order is kept. Carrying it out properly needs a few p
 | **M9** | Dashboard polish, README, results write-up | — | M | M7, M8 |
 | **M11.1** | Report explanations, order box, cancel, advanced mode | 9, 11, 12, 13, 14 (D15 to D18) | XL | M8 |
 | **M11.2** | Dashboard restructure: Account & Wallet, Trades History, Portfolio | 13, 15 (D19, D20) | L | M11.1 |
+| **M11.3** | Live P&L on open trades, market and connection badges (the Close button is deferred) | 13, 14 (display only) | M | M11.2 |
 | **M11.4** | Remove the Backtests page from the dashboard | 13 (D21) | S | M11.2 |
 
 Size is relative effort (S < M < L < XL), not a calendar estimate. Real durations get recorded in each retrospective. Size also sets the document set ([§1.2](#12-per-milestone-documents)): M0, M2, M5, M7 and M9 use `specs-plan.md`; M1, M3, M4, M6 and M8 use separate `specs.md` and `plan.md`.
@@ -261,7 +263,7 @@ flowchart LR
   M8 --> M9
 ```
 
-M11.1, M11.2 and M11.4 are the owner's labels (there is no M10 or M11); they are built on top of M8 and do not block M9.
+M11.1 to M11.4 are the owner's labels (there is no M10 or M11); they are built on top of M8 and do not block M9.
 
 M1 and M2 are independent of each other and could be built in either order. M7 and M8 are also independent once M6 is done. By default we still work **sequentially**, one milestone at a time, so the gated review stays manageable.
 
@@ -594,6 +596,12 @@ Each milestone below states the goal, scope, deliverables, **draft acceptance cr
 
 ---
 
+### M11.3 — Live P&L and market status
+
+**Goal:** Trades History shows the live profit or loss of every open trade (every 5 seconds) and Account & Wallet shows whether the US market is open and whether Alpaca is connected. Size M, one `specs-plan.md` by the owner's instruction. Depends on M11.2. Both parts only display numbers, so there is no deviation. The Close button in the same specs-plan is deferred and not built. See [`specs-plan.md`](milestones/M11.3-live-pnl-close-market/specs-plan.md).
+
+---
+
 ### M11.4 — Remove the Backtests page
 
 **Goal:** The dashboard keeps only the live tool; backtest results are the Markdown file `docs/results/results.md`. Size S, one `specs-plan.md` by the owner's instruction. Depends on M11.2. Deviation D21. See [`specs-plan.md`](milestones/M11.4-remove-backtests-page/specs-plan.md).
@@ -602,7 +610,7 @@ Each milestone below states the goal, scope, deliverables, **draft acceptance cr
 
 ### M9 — Dashboard polish, README, results write-up
 
-**Goal:** The architecture's done-when: *"A stranger can understand the system and its results from the repo."*
+**Goal:** The architecture's done-when: *"A stranger can understand the system and its results from the repo."* Size M, one `specs-plan.md` + `task.md`: [`specs-plan.md`](milestones/M9-polish-readme-results/specs-plan.md) (approved 2026-10-12) holds the scope, acceptance criteria and work order; the sections below are its seeds.
 
 **In scope**
 

@@ -154,3 +154,9 @@ Dependencies point inward as before: `api/` calls the Alpaca broker; the P&L mat
 | Another trade or outside holding in the same symbol | The sell is for this trade's shares only (D-M11.3-4) |
 | A fast-moving price makes the confirmation's number differ from the fill | The dialog says the fill price can differ; the fill check records the real one |
 | Polling load | One positions call per 5 s while an open trade is on screen; none otherwise |
+
+## Retrospective
+
+**Built (2026-10-06), merged to `master` with M11.2 and M11.4 (merge `e89ad90`), tagged `m11.3`:** the live P&L of open trades on Trades History (every 5 s) and the market-status badge with the Alpaca Connected/Offline badge on Account & Wallet. Both only display numbers, so no deviation or architecture change was needed.
+
+**Deferred, not built:** the Close button and everything behind it (FR-6 to FR-11, AC-4 to AC-8, D-M11.3-4 to D-M11.3-8, D-M11.3-11, D-M11.3-12, migration `0010`, Q1, Q2). It would place an order on a filled trade and so needs its own deviation, under a new number now that D21 is the Backtests page. M9 does not build it (D-M9-13).

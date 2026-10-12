@@ -9,39 +9,100 @@ approve every trade**.
 > **Paper trading only. Not financial advice.** Every trade goes to an
 > Alpaca **paper** account (fake money, real prices) or a simulated broker
 > in backtests. The code refuses to start against anything but Alpaca's
-> paper endpoint. Reports are a research tool, not investment advice.
+> paper endpoint. Reports are a research tool, not investment advice. This is
+> a personal portfolio project: all rights reserved.
 
 Full design and build process: [`docs/architecture.md`](docs/architecture.md)
 (what it does) and [`docs/dev-plan.md`](docs/dev-plan.md) (how it's built,
-milestone by milestone). Current status lives in
-[`docs/milestones/`](docs/milestones/).
+milestone by milestone). Status of each milestone: [`docs/progress.md`](docs/progress.md).
+
+## Screenshots
+
+**Account & Wallet**: the paper account's balance, the ticker box and the watchlist.
+
+![Account & Wallet](docs/images/account-wallet.jpg)
+
+**Trades History**: one row per analysis, with live profit and loss on open trades.
+
+![Trades History](docs/images/trades-history.jpg)
+
+**Portfolio**: the equity chart and the realised statistics.
+
+![Portfolio](docs/images/portfolio.jpg)
+
+**The report**: the recommendation, the board score, each analyst's facts and the order box.
+
+![Report: recommendation, technical analyst and order box](docs/images/report-analysts-technical.jpg)
+
+![Report: fundamentals and sentiment analysts](docs/images/report-analysts-sentiment.jpg)
+
+**The debate**: how it reached its conclusion, then each round with its evidence IDs.
+
+![Debate: conclusion](docs/images/report-debate-conclusion.jpg)
+
+![Debate: round 1](docs/images/report-debate-round-1.jpg)
+
+![Debate: round 2](docs/images/report-debate-round-2.jpg)
+
+## How it works
+
+```mermaid
+flowchart LR
+  A["You pick a stock"] --> B["Request check"]
+  B --> C["Three analysts: technical, fundamentals, news"]
+  C --> D["Bull and bear debate"]
+  D --> E["Trader: buy or no trade"]
+  E --> F["Risk manager: size, stop-loss, take-profit"]
+  F --> G["Report"]
+  G --> H{"You approve or reject"}
+  H --> I["Alpaca paper bracket order"]
+```
+
+- **Code does the math, AI does the judgment.** Indicators, ratios, share counts,
+  exits, rules and every number in the report are plain, tested Python. The
+  models only read the facts, argue, and explain; a number check rejects any
+  figure a model invents.
+- **You decide.** Nothing trades until you approve, and the share count can only
+  go down unless you switch on advanced mode (cash is still a hard limit).
+- **The past can't leak into a backtest.** A date guard filters every data request
+  and every response, and backtests start after the models' training cutoff.
+- **Every buy has its exits.** An approved buy is one bracket order (entry,
+  stop-loss, take-profit) handled by the broker.
+
+Details: [architecture §4 and §5](docs/architecture.md#4-system-overview).
 
 ## Quick start
 
-Requires Python 3.12 and [`uv`](https://docs.astral.sh/uv/).
+Requires Python 3.12, [`uv`](https://docs.astral.sh/uv/), and (for the
+dashboard) Node 22. You also need three free accounts:
+
+- an [Alpaca](https://alpaca.markets) **paper** trading account (API key and secret),
+- a [Groq](https://console.groq.com) API key (the free tier runs the pinned models),
+- an email address for the SEC's User-Agent header (any email you own).
 
 ```bash
 # 1. Install dependencies into a local virtual environment.
 uv sync
 
-# 2. Copy the environment template and fill in your own keys.
+# 2. Copy the environment template and fill in your own keys
+#    (on Windows: copy .env.example .env).
 cp .env.example .env
-# then edit .env: Alpaca paper keys, a Groq API key, and an email for the
-# SEC User-Agent header. See .env.example for what each variable is.
+# then edit .env: ALPACA_API_KEY, ALPACA_SECRET_KEY, GROQ_API_KEY and
+# SEC_CONTACT_EMAIL. Leave ALPACA_BASE_URL as it is. .env is git-ignored.
 
 # 3. Check everything is configured and every external service is reachable.
 uv run bullpit doctor
 
-# 4. Create the journal database (LLM call log, requests, and later tables).
+# 4. Create the journal database (a local SQLite file).
 uv run alembic upgrade head
 
-# 5. Run your first research request (technical, fundamentals and news
-#    sentiment analysts, then a debate-or-no-trade route). `bullpit request`
-#    also applies any pending journal migration itself, so step 4 is
-#    optional once you've run it once.
+# 5. Run your first research request on a past date (about a minute, about
+#    15K free Groq tokens when the analysts' signals lead to a debate).
 uv run bullpit request AAPL --mode backtest --as-of 2024-07-12
 # Live mode (today's data, no --as-of): uv run bullpit request AAPL
 ```
+
+Step 4 is optional: `bullpit request` applies any pending migration itself.
 
 `doctor` prints one line per check (config, the paper-only guard, Alpaca
 trading and data, Groq, SEC EDGAR, yfinance) and exits non-zero if anything
@@ -77,6 +138,10 @@ template sentences. The report is also saved to the journal (`reports`
 table) as JSON. `bullpit request` never places an order. Live approval and orders go
 through the dashboard (below); backtests approve and place simulated orders
 themselves.
+
+When the Groq free quota runs out the request stops with a message; try again
+later. Next: [run a backtest](#running-a-backtest), [read the results](#results-and-limits),
+or [open the dashboard](#live-mode-the-dashboard).
 
 ### Running a backtest
 
@@ -130,6 +195,55 @@ by setting `LLM_PROVIDER=openrouter`, both model variables to that name and
 both `LLM_*_MODEL_CUTOFF` variables to `2026-08-14`; the pinned gpt-oss models on
 Groq remain the default. Results: [`docs/results/results.md`](docs/results/results.md).
 
+## Results and limits
+
+The one finished evaluation is a **pilot**: 2 stocks (BRK.B, MSFT), 2 weeks
+(2026-08-17 to 2026-08-28), one seed, on a free Qwen model, with the same broker,
+sizing and exits for every approach. Copied from
+[`docs/results/results.md`](docs/results/results.md) (the full page, charts and
+limits), as of 2026-10-12:
+
+| Approach | Total return | Tokens per request |
+|---|---|---|
+| Bull Pit | +0.30% | 21,361 |
+| Single agent | +0.49% | 2,321 |
+| Always buy | +0.44% | 0 |
+| Moving-average rule | +0.36% | 0 |
+| Bull Pit replayed with fixed sizing | +0.36% | 0 |
+| Buy and hold MSFT / BRK.B | +4.72% / +0.06% | n/a |
+
+**What this does and doesn't show.** The pipeline runs end to end: all approaches
+use the same broker, every metric is computed from the journal, and the page and
+charts are produced by code. It does **not** show that any approach is better:
+seven trades over two weeks cannot separate skill from luck, a free model was used
+instead of the pinned pair, fills are approximate (next open plus slippage on
+daily bars), and buy and hold is fully invested while the approaches are mostly in
+cash. One more point stands out: Bull Pit used about nine times the tokens of the
+single agent, and nothing yet shows the debate pays for itself.
+
+A proper test (26 weeks, several stocks, repeat seeds) needs about 300 requests,
+more than the free tiers give. The commands are in the
+[M7 retrospective](docs/milestones/M7-evaluation/task.md#retrospective).
+
+## Live track record
+
+A snapshot of the real **paper** account, read from the dashboard on 2026-10-12
+(about 19:50 Pakistan time, US market open). Paper money; Alpaca's own balance
+figure, which includes everything on the account, not only Bull Pit's trades.
+
+| | |
+|---|---|
+| Analyses run (Trades History) | 22: 12 no trade, 3 failed, 2 open, 2 no decision recorded, 1 cancelled, 1 expired, 1 closed |
+| Approved by the owner | 4 (one a limit order the owner then cancelled) |
+| Closed trades | 1: 1 share of MSFT, in at $517.90, closed by hand on 2026-10-08 at $529.13, **+$11.23** (exit reason *manual*) |
+| Open trades | 2: 50 CSCO (in at $113.91) and 15 GOOGL (in at $345.11), each with its stop-loss and take-profit at the broker |
+| Realised profit and loss | **+$11.23** (total loss $0.00) |
+| Account balance | $99,599.14, down $169.47 (0.17%) on the day; the balance includes the unrealised result of the open trades |
+
+No stop-loss or take-profit has fired on a Bull Pit trade yet. Open trades are
+unrealised, one closed trade is a sample of one, and none of this is evidence of
+skill.
+
 ## Live mode: the dashboard
 
 The dashboard is the one way to a live order. It needs two processes, both bound
@@ -155,6 +269,8 @@ The sidebar has three pages: **Account & Wallet** (the home page), **Trades Hist
    The paragraphs are written by the report writer from code-written facts and pass the
    same number and evidence-ID check as the rest of the report; they explain the model's
    stated judgment, they are not a calculation.
+   A `[?]` inside quoted model text means the model wrote a number the code could
+   not confirm, so the page hides it.
 3. **Decide in the order box.** It shows the latest trade price (refreshed about every
    5 seconds while the tab is visible) and the bracket order to scale. Choose **Buy now**
    (a market order; the stop and take-profit follow the price you see, keeping the plan's
@@ -185,34 +301,6 @@ The sidebar has three pages: **Account & Wallet** (the home page), **Trades Hist
 
 **Portfolio** shows the equity chart and the realised statistics (approved, rejected,
 ongoing and closed trades, total profit, total loss, net P&L).
-
-### Screenshots
-
-**Account & Wallet**: the paper account's balance, the ticker box and the watchlist.
-
-![Account & Wallet](docs/images/account-wallet.jpg)
-
-**Trades History**: one row per analysis, with live profit and loss on open trades.
-
-![Trades History](docs/images/trades-history.jpg)
-
-**Portfolio**: the equity chart and the realised statistics.
-
-![Portfolio](docs/images/portfolio.jpg)
-
-**The report**: the recommendation, the board score, each analyst's facts and the order box.
-
-![Report: recommendation, technical analyst and order box](docs/images/report-analysts-technical.jpg)
-
-![Report: fundamentals and sentiment analysts](docs/images/report-analysts-sentiment.jpg)
-
-**The debate**: how it reached its conclusion, then each round with its evidence IDs.
-
-![Debate: conclusion](docs/images/report-debate-conclusion.jpg)
-
-![Debate: round 1](docs/images/report-debate-round-1.jpg)
-
-![Debate: round 2](docs/images/report-debate-round-2.jpg)
 
 The web app's API types are generated from the API's OpenAPI schema
 (`npm run gen:api`, run by CI, which fails if the committed files are stale).
@@ -254,34 +342,50 @@ checks) run automatically on `git commit` once installed with
 
 ```text
 bull-pit/
-├── bullpit/            the package: config, errors, logging, cli, broker/, ...
+├── bullpit/            the package
+│   ├── agents/         analysts, debate, trader, risk review, single agent
+│   ├── tools/          indicators, fundamentals and sentiment maths (pure)
+│   ├── data/           the only door to outside data: prices, SEC, news, date guard, cache
+│   ├── llm/            the LLM gateway and prompts
+│   ├── risk/           sizing, exits, hard rules (pure)
+│   ├── report/         the report builder and number check
+│   ├── approval/       the approval gate
+│   ├── broker/         Alpaca (paper only), the simulated broker, the paper guard
+│   ├── journal/        database models and migrations
+│   ├── eval/           metrics, baselines and the results page
+│   ├── runners/        live request, backtest, fill check
+│   ├── api/            the FastAPI app behind the dashboard
+│   └── graph.py        the LangGraph graph
 ├── web/                the dashboard: Next.js, TypeScript, Tailwind
-├── tests/              automated tests (mirrors bullpit/); no network calls
-├── scripts/spikes/     throwaway scripts that verify external-service assumptions
+├── tests/              automated tests (mirror bullpit/); no network calls
+├── scripts/spikes/     throwaway scripts that verified external-service assumptions
 ├── docs/
 │   ├── architecture.md what the system does
 │   ├── dev-plan.md     how it's built: process, milestones, testing policy
+│   ├── progress.md     what each milestone built
+│   ├── system-walkthrough.md  a plain-language tour of one request
 │   ├── adr/            decisions not already fixed by the architecture
-│   └── milestones/     per-milestone specs, plans, task checklists, findings
+│   ├── milestones/     per-milestone specs, plans, tasks and retrospectives
+│   ├── results/        the evaluation page and its charts
+│   └── images/         dashboard screenshots
 └── .github/workflows/  CI: lint, type check, tests, web build, secret scan
 ```
 
-See [`docs/dev-plan.md` §2.3](docs/dev-plan.md#23-repository-layout) for the
-full, target layout as later milestones fill it in.
+Decisions: [ADR-0001](docs/adr/0001-package-manager-uv.md) to
+[ADR-0008](docs/adr/0008-limit-entry-bracket.md). Milestones:
+[`docs/milestones/`](docs/milestones/) (M0 to M9, plus M11.1 to M11.4).
 
 ## How it's built
 
-Bull Pit is built milestone by milestone (M0-M9), each gated on the
-project owner's written approval of that milestone's specs before any code
-is written. See [`docs/dev-plan.md` §1](docs/dev-plan.md#1-how-we-work) for
-the process, and [`docs/milestones/`](docs/milestones/) for what's done and
-what's next.
+Bull Pit was built milestone by milestone, each gated on the project owner's
+written approval of that milestone's specs before any code was written. See
+[`docs/dev-plan.md` §1](docs/dev-plan.md#1-how-we-work) for the process.
 
 ## Testing philosophy
 
 Automated tests exist where a bug would lose money, leak the future, or
 silently corrupt results (the date guard, sizing and exits, the simulated
-broker's fill rules, report numbers, and so on). Everything else — prompt
-quality, the dashboard, live services — is checked by hand at milestone
+broker's fill rules, report numbers, and so on). Everything else (prompt
+quality, the dashboard, live services) is checked by hand at milestone
 acceptance. See [`docs/dev-plan.md` §7](docs/dev-plan.md#7-testing-strategy)
 for the full policy and its reasoning.
