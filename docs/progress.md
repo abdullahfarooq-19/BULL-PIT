@@ -22,7 +22,7 @@ still open. The sources of truth stay [`architecture.md`](architecture.md),
 | M11.2 | Dashboard restructure: Account & Wallet, Trades History, Portfolio | Done, tagged `m11.2` |
 | M11.3 | Live P&L, market and connection badges, logo and motto | Done, tagged `m11.3` |
 | M11.4 | Backtests page removed (results are `docs/results/results.md`) | Done, tagged `m11.4` |
-| M9 | Dashboard polish, README, results write-up | Not started |
+| M9 | Dashboard polish, README, results write-up | In progress: README, audits, clean-up and docs done; owner's hand pass, a second reader's dry run, the first push with CI, and acceptance remain |
 
 ## What each milestone delivered
 
@@ -120,4 +120,4 @@ end and states plainly that it cannot say any approach is better.
 
 | Item | Needs |
 |---|---|
-| **M9**: dashboard polish from real use, README, results write-up | Its `specs-plan.md` and `task.md` approved by the owner |
+| **M9** hand pass of the dashboard (the owner), a second person's run of the README, the first push and a green CI, the owner's acceptance and the `m9` tag | The owner |
