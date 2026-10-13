@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | All tasks M0-T-1 to M0-T-24 done, 2026-09-30. Walk-through in M0-T-25 below; awaiting explicit owner acceptance before tagging `m0` |
+| **Status** | All tasks M0-T-1 to M0-T-24 done, 2026-09-30. Walk-through in M0-T-25 below; **accepted by the owner 2026-09-30 and tagged `m0`** (see M0-T-25 and the retrospective) |
 | **Date** | 2026-09-28 (started), 2026-09-30 (last task) |
 | **Specs and plan** | [`specs-plan.md`](specs-plan.md) (approved 2026-09-28) |
 | **Branch** | `m0-foundations` (merged into `master` as part of the M1 merge; later work committed directly to whichever branch was current) |
@@ -61,7 +61,7 @@ Phases:
 
 | ✓ | ID | Task | Files | Serves | Verified by | Commit |
 |---|---|---|---|---|---|---|
-| [ ] | M0-T-25 | **Acceptance and retrospective.** Walk through AC-1 to AC-10 with the evidence below; write the retrospective; after owner acceptance, merge to `master` and tag `m0` | `task.md` | DoD §1.5 | Owner accepts | — |
+| [x] | M0-T-25 | **Acceptance and retrospective.** Walk through AC-1 to AC-10 with the evidence below; write the retrospective; after owner acceptance, merge to `master` and tag `m0` | `task.md` | DoD §1.5 | Owner accepts | 953e1cb |
 
 ---
 

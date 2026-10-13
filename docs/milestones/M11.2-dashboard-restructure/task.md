@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Written 2026-10-06 after the owner approved [`specs-plan.md`](specs-plan.md) revision 1 ("everything is approved, go ahead"). **Built 2026-10-06, uncommitted, waiting for the owner's review** (see the retrospective) |
+| **Status** | Written 2026-10-06 after the owner approved [`specs-plan.md`](specs-plan.md) revision 1 ("everything is approved, go ahead"). **Built 2026-10-06, accepted with M11.1 to M11.4 and merged to `master` (merge `e89ad90`), tagged `m11.2`** (see the retrospective) |
 | **Specs and plan** | [`specs-plan.md`](specs-plan.md) |
 | **Branch** | `m11.2-dashboard-restructure`, cut from `master` |
 
@@ -20,7 +20,7 @@ Each task is one commit **when the owner asks for commits** (CLAUDE.md), so tick
 
 ## Retrospective
 
-(Written 2026-10-06, when the build ended. Nothing is committed: CLAUDE.md says commit only when the owner asks.)
+(Written 2026-10-06, when the build ended, before the commit and merge.)
 
 **Built.** Everything in the specs-plan: migration `0009` and `LikedStock`; `AlpacaBroker.get_account_summary`; `GET /history`, `/account`, `/portfolio`, `/watchlist` (+ `PUT` and `DELETE`); the S&P 100 file; Account & Wallet, Trades History (History deleted, `/requests` redirects), Portfolio, the back link, sidebar and palette; deviations D19, D20 and architecture v2.8. **Numbers:** 426 tests (407 before; 19 added, no existing assertion changed) in about 50 s; ruff, ruff format, mypy, ESLint and the web build clean; OpenAPI and generated types regenerated.
 
