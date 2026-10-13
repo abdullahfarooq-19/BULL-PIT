@@ -117,7 +117,7 @@ No P1 or P2 issue was found, by this session's checks or by the owner's hand pas
 
 **Accepted by the owner as exceptions to the specs-plan** (the way M8 accepted its own):
 
-- **M9-AC-1's second reader.** The dry run was the author's, on the author's machine and keys. No one else has followed the README yet; if someone does, their stumbles belong in this file.
+- **M9-AC-1's second reader.** ~~Not done at acceptance.~~ **Done after acceptance (2026-10-14):** the owner reported the second-reader run of the README "done and working fine". No step-by-step notes or stumbles were pasted, so the run is recorded as reported, without timings. The author's own fresh-clone run (above) had no stumble either.
 - **T-7's restart check with a real waiting report**, and a stop or target firing on a real Bull Pit trade (M8-AC-6's exit half). Both need a buy report and market time.
 - **T-10, the first push and CI.** Nothing has been pushed since M0 (`master` is 51 commits ahead of `origin`, with all tags local). So **M9-AC-3's "CI green" and M8-AC-8 are not met**: the three CI jobs have never run, and the history scan above is local only. The push is the owner's to ask for; the first thing to do after it is read the CI result and fix forward.
 
