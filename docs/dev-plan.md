@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Revision 11: status only (M0 to M8 and M11.1 to M11.4 accepted and tagged; M9 in progress; M11.3 added to §4 and §5, no deviation). Revision 10: D21 added (the Backtests page leaves the dashboard); revision 9 content follows. Earlier: Revision 9: D19 and D20 added (dashboard restructure, live balance and watchlist); M7 and M8 accepted, M11.1 to M11.4 built and merged |
+| **Status** | Revision 11: status only (M0 to M9 and M11.1 to M11.4 accepted and tagged; M11.3 added to §4 and §5, no deviation). Revision 10: D21 added (the Backtests page leaves the dashboard); revision 9 content follows. Earlier: Revision 9: D19 and D20 added (dashboard restructure, live balance and watchlist); M7 and M8 accepted, M11.1 to M11.4 built and merged |
 | **Changes in revision 11** | Status only: M11.3 added to §4 and §5; M9's state recorded ([M9 specs-plan](milestones/M9-polish-readme-results/specs-plan.md)). No deviation, no `architecture.md` change |
 | **Changes in revision 10** | D21 added ([§3](#3-deviations-from-the-architecture-roadmap)); M11.4 added to §4 and §5; `architecture.md` v2.9 |
 | **Changes in revision 9** | D19 and D20 added ([§3](#3-deviations-from-the-architecture-roadmap)); M11.2 added to §4 and §5; §8 gets the `0009` row; `architecture.md` v2.8 |

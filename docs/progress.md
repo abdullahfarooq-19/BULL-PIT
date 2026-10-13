@@ -22,7 +22,7 @@ still open. The sources of truth stay [`architecture.md`](architecture.md),
 | M11.2 | Dashboard restructure: Account & Wallet, Trades History, Portfolio | Done, tagged `m11.2` |
 | M11.3 | Live P&L, market and connection badges, logo and motto | Done, tagged `m11.3` |
 | M11.4 | Backtests page removed (results are `docs/results/results.md`) | Done, tagged `m11.4` |
-| M9 | Dashboard polish, README, results write-up | In progress: README, audits, clean-up and docs done; owner's hand pass, a second reader's dry run, the first push with CI, and acceptance remain |
+| M9 | Dashboard polish, README, results write-up | Done, tagged `m9` (accepted 2026-10-14; the first push and CI, and a second reader of the README, are carried over, see its `task.md`) |
 
 ## What each milestone delivered
 
@@ -120,4 +120,6 @@ end and states plainly that it cannot say any approach is better.
 
 | Item | Needs |
 |---|---|
-| **M9** hand pass of the dashboard (the owner), a second person's run of the README, the first push and a green CI, the owner's acceptance and the `m9` tag | The owner |
+| The first push (nothing since M0 is on `origin`) and a green CI run; a second person following the README | The owner |
+| The full gpt-oss evaluation (26 weeks, three stocks, repeat seeds, debate impact): commands in the M7 retrospective | Paid or large model quota |
+| The M11.3 Close button | A new spec and deviation |

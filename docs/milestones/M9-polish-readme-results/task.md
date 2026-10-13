@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Written 2026-10-12 after the owner approved [`specs-plan.md`](specs-plan.md) revision 1 ("specs plan is approved write the task.md and complete the M9"). Q1 to Q6 take the recommended answers (the owner gave none): Q1 = A, Q2 = A, Q3 = A, Q4 = A, Q5 = A, Q6 = B (crop) or leave out |
+| **Status** | **Accepted by the owner 2026-10-14, merged to `master` and tagged `m9`, with the exceptions listed in the Retrospective.** Written 2026-10-12 after the owner approved [`specs-plan.md`](specs-plan.md) revision 1 ("specs plan is approved write the task.md and complete the M9"). Q1 to Q6 take the recommended answers (the owner gave none): Q1 = A, Q2 = A, Q3 = A, Q4 = A, Q5 = A, Q6 = B (crop) or leave out |
 | **Date** | 2026-10-12 |
 | **Specs and plan** | [`specs-plan.md`](specs-plan.md) (revision 1; necessary testing, dev-plan §7) |
 | **Branch** | `m9-polish-readme-results`, from `master` (`d2a382c`) |
@@ -14,7 +14,7 @@ Each task is about half a day or less and is one commit when the owner asks for 
 | ✓ | ID | Task | Files | Serves | Done when | Commit |
 |---|---|---|---|---|---|---|
 | [x] | M9-T-1 | **Documents.** `dev-plan.md`: status line, revision 11 (status only), §4 M11.3 row and M9 state, §5 M11.3 section. Stale state fixed: `M8/task.md` (T-12 and the "not done yet" heading point to the acceptance note), `M11.2/task.md` status, `M11.3/specs-plan.md` built/deferred note, `M11.4/specs-plan.md` merge, tag and retrospective line. The §11.8 table filled in this file | `docs/dev-plan.md`, milestone docs | FR-12; AC-2 | Every row of the Documents check below has its link and no stale status | 5bb1daa, be50a41 |
-| [ ] | M9-T-2 ◆ | **Hand pass and issue log.** The owner goes through Account & Wallet, Trades History, Portfolio and the report page (normal, API stopped, empty journal, keyboard only, narrow window; a buy, a no-trade, a pending limit order). Issues go in the Issues table below with a severity | this file | FR-1; AC-3 | The owner has confirmed the list | |
+| [x] | M9-T-2 ◆ | **Hand pass and issue log.** The owner goes through Account & Wallet, Trades History, Portfolio and the report page (normal, API stopped, empty journal, keyboard only, narrow window; a buy, a no-trade, a pending limit order). Issues go in the Issues table below with a severity | this file | FR-1; AC-3 | The owner has confirmed the list | |
 | [x] | M9-T-3 | **Fixes.** One issue per commit, P1 and P2 first; a trivial P3 only if it changes no behaviour. A bug in the §7.1 categories gets one regression test | `bullpit/**`, `web/src/**`, `tests/**` | FR-2 to FR-4; AC-8 | Issues table has no open P1 or P2 (or an owner-accepted exception); four checks clean | none needed |
 | [x] | M9-T-4 | **Dependency audit and `.env.example`.** Import check of every direct dependency (Python and web), `uvx pip-audit`, `npm audit`, comparison of `.env.example` with the variables `config.py` reads. Output pasted below | `pyproject.toml`, `uv.lock`, `web/package*.json`, `.env.example` (only if needed) | FR-11, FR-15; AC-6, AC-7 | Output pasted; unused dependencies removed; four checks and web build clean | 5bb1daa |
 | [x] | M9-T-5 | **Dead code and clutter sweep** ([specs-plan §11.4](specs-plan.md#114-dead-code-and-clutter-sweep)) | `bullpit/**`, `web/src/**`, `tests/**` | FR-10; AC-6 | Output pasted; nothing unused left; four checks and web build clean | 5bb1daa |
@@ -23,7 +23,7 @@ Each task is about half a day or less and is one commit when the owner asks for 
 | [x] | M9-T-8 | **Live track record and final status docs** ([specs-plan §11.6](specs-plan.md#116-live-track-record-snapshot)): the README section, `progress.md`, `system-walkthrough.md` | `README.md`, `docs/progress.md`, `docs/system-walkthrough.md` | FR-9, FR-13, FR-14; AC-5 | Numbers match the screen; owner reads the wording | be50a41 |
 | [ ] | M9-T-9 | **History secret scan, then the dry run** ([§11.7](specs-plan.md#117-history-secret-scan), [§11.3](specs-plan.md#113-readme-dry-run)) on the final README | this file | FR-16, FR-18; AC-1, AC-3 | Scan clean; dry run recorded; a second person's run if Q4 = A | |
 | [ ] | M9-T-10 ◆ | **Push and CI,** only when the owner asks: `master` and the tags to `origin`; read the CI result; fix forward until `check`, `secrets` and `web` are green | this file | FR-17; AC-3 | Three green jobs | |
-| [ ] | M9-T-11 ◆ | **Acceptance.** Retrospective below; the owner accepts; when asked, merge to `master` and tag `m9` | this file | DoD §1.5 | Owner accepts | |
+| [x] | M9-T-11 ◆ | **Acceptance.** Retrospective below; the owner accepts; when asked, merge to `master` and tag `m9` | this file | DoD §1.5 | Owner accepts | |
 
 ## Traceability
 
@@ -50,10 +50,10 @@ Severity: P1 can lose money, leak the future, bypass an approval or the paper-on
 | M9-I-2 | Report page | Most debated reports carry the soft "N debate paragraphs are over 110 words" warning (M11.1 carry-over) | P3 | Listed, not fixed: changing the writer's prompt changes behaviour |
 | M9-I-3 | Report page, sentiment facts | Headlines with relevance 0.00 (for example unrelated companies) are still listed as facts S1 to S6 | P3 | Listed, not fixed: M3's sentiment rule (the weight is 0, the list is code-written) |
 | M9-I-4 | Backend, warnings | M5 carry-over: one M4 warning quotes LLM text; a number in it would show unmasked | P3 | Listed: per the M5 retrospective it has carried IDs only since M4's `trader.md` fix (not re-checked on a real report in M9) |
-| M9-I-5 | Dashboard, owner's pass | The owner's own click-through of the four pages (keyboard only, narrow window, API stopped, empty journal) has **not** been recorded | open | Needs the owner (T-2) |
+| M9-I-5 | Dashboard, owner's pass | The owner's own click-through of the four pages (keyboard only, narrow window, API stopped, empty journal) has **not** been recorded | closed | Closed 2026-10-14: the owner went through the dashboard and reported it clear; no notes or screenshots were pasted |
 | M9-I-6 | `web/` dependencies | `npm audit` still reports high findings in the shadcn CLI's and `eslint-config-next`'s dev-time dependencies (`ts-morph`, `fast-glob`, `braces`, `micromatch`, `@next/eslint-plugin-next`); the only offered "fix" is a downgrade to shadcn 1.0.0 and eslint-config-next 14 | P3 | Accepted: nothing in the running dashboard or API uses them; the direct `next` advisories are fixed (16.4.0) |
 
-No P1 or P2 issue was found by this session's checks (hand pass T-2 still to be done by the owner).
+No P1 or P2 issue was found, by this session's checks or by the owner's hand pass (2026-10-14).
 
 ## Evidence
 
@@ -102,3 +102,27 @@ No P1 or P2 issue was found by this session's checks (hand pass T-2 still to be 
 | M9 | this file | Retrospective written at acceptance |
 
 ## Retrospective
+
+(Written 2026-10-14, at the owner's acceptance.)
+
+**Accepted.** The owner said "dashboard hand pass is clear i have checked it" and asked for the merge and the `m9` tag. M9 changed no behaviour (D-M9-2): no deviation, migration or architecture revision.
+
+**Built.** The README rewritten for a newcomer (diagram, prerequisites and key sources, quick start, results excerpt and limits, a dated live track record, project tree, screenshots); stale status lines and missing retrospectives fixed across M0 to M11.4; ADR-0007's AC-13 probe addendum; the dependency audit (Python clean, `next` 16.4.0); dead code removed; the full history scanned (gitleaks 8.21.2, 151 commits, no leaks); a fresh-clone dry run with no stumble. **Numbers:** 429 tests in about 55 s, unchanged from before M9 (no test added or edited); ruff, mypy, ESLint and the web build clean; 611 doc links, 0 broken.
+
+**What changed from the plan**
+
+- The AC-13 probe and the AC-7 real half were already available: the probe ran in a market session on 2026-10-12, and the owner had closed the MSFT trade by hand on 2026-10-08 (the fill check recorded it `manual`, +$11.23), so the README's track record has one closed trade.
+- Q1 to Q5 took the recommended answers (the owner gave none); Q6: the risk-manager screenshot was left out and stays an untracked file in `docs/images/`.
+- No P1 or P2 issue was logged. The five P3s (`[?]` masking, long debate paragraphs, relevance-0 headlines, the M5 warning carry-over, dev-time npm findings) are listed in the Issues table and not fixed, because each fix would change behaviour or touch nothing that runs.
+
+**Accepted by the owner as exceptions to the specs-plan** (the way M8 accepted its own):
+
+- **M9-AC-1's second reader.** The dry run was the author's, on the author's machine and keys. No one else has followed the README yet; if someone does, their stumbles belong in this file.
+- **T-7's restart check with a real waiting report**, and a stop or target firing on a real Bull Pit trade (M8-AC-6's exit half). Both need a buy report and market time.
+- **T-10, the first push and CI.** Nothing has been pushed since M0 (`master` is 51 commits ahead of `origin`, with all tags local). So **M9-AC-3's "CI green" and M8-AC-8 are not met**: the three CI jobs have never run, and the history scan above is local only. The push is the owner's to ask for; the first thing to do after it is read the CI result and fix forward.
+
+**Carry-overs**
+
+- The full gpt-oss evaluation (26 weeks, three stocks, repeat seeds, debate impact) is documented, not run (Q1 = A): commands in the [M7 retrospective](../M7-evaluation/task.md#retrospective).
+- The M11.3 Close button stays deferred.
+- The soft "debate paragraphs over 110 words" warning and the `[?]` display remain as designed (M9-I-1, M9-I-2).

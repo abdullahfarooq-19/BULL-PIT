@@ -83,7 +83,7 @@ validated and bounded it.
 | M7 | Evaluation, baselines, pilot results | Done, tagged `m7` |
 | M8 | Live mode: API, dashboard, approval, bracket orders, fill check | Done, tagged `m8` (accepted 2026-10-06) |
 | M11.1 to M11.4 | Report explanations and order box; dashboard restructure; live P&L and market status; Backtests page removed | Done, tagged `m11.1` to `m11.4` |
-| M9 | Dashboard polish, README, results write-up | In progress |
+| M9 | Dashboard polish, README, results write-up | Done, tagged `m9` |
 
 Status refreshed 2026-10-12; the rest of this page is as written on 2026-09-30
 unless a note says otherwise. What each milestone built:
