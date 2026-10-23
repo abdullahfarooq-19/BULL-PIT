@@ -71,7 +71,7 @@ uv run bullpit doctor        # check config and external services
 
 ## Git
 
-- Default branch `master`; one branch per milestone, `m<n>-<slug>`; tag `m<n>` on acceptance.
+- Default branch `main`; one branch per milestone, `m<n>-<slug>`; tag `m<n>` on acceptance.
 - Conventional Commits (`feat:`, `fix:`, `test:`, `docs:`, `refactor:`, `chore:`), with the task ID in the body (`Task: M1-T-4`).
 - Commit only when the owner asks. Remote is a public GitHub repo, so **never commit secrets**: keys live in `.env` only; `.env.example` lists variable names without values.
 

@@ -106,10 +106,10 @@ Any decision that isn't already fixed by `architecture.md`, or that changes it, 
 
 ### 1.6 Version control workflow
 
-- **Branches:** `master` is always green. Each milestone gets its own branch, `m<n>-<slug>`, and bigger tasks may get sub-branches.
+- **Branches:** `main` is always green. Each milestone gets its own branch, `m<n>-<slug>`, and bigger tasks may get sub-branches.
 - **Commits:** Conventional Commits (`feat:`, `fix:`, `test:`, `docs:`, `refactor:`, `chore:`), with the task ID in the body (`Task: M1-T-4`).
-- **Merge:** squash or merge commit into `master` after acceptance, then tag `m<n>`.
-- **Default branch:** `master`. The local repo already exists on `master`, and the decision (Q7) was to keep it in that case.
+- **Merge:** squash or merge commit into `main` after acceptance, then tag `m<n>`.
+- **Default branch:** `main` (renamed from `master` at the owner's request, 2026-10-24).
 - **Remote:** a **public** GitHub repository from day one (Q2). Public repos get free GitHub Actions minutes with no monthly cap, including Windows runners. Secret scanning (pre-commit and CI) is in place before the first push.
 
 ---
@@ -749,7 +749,7 @@ Owner answers recorded on 2026-09-28.
 | Q4 | Email for the SEC User-Agent header | **Owner action:** provide one; stored in `.env` only. A dedicated project email is fine | Keeps personal details out of the repo |
 | Q5 | Package manager | **`uv`** | Fast, lockfile-based, works well on Windows |
 | Q6 | Hosting | **Local only** for v1 (SQLite, localhost API) | Hosting adds auth and security work that doesn't serve the core goal |
-| Q7 | Default branch | **`master`**: the rule was "`main`, unless the repo already exists on `master`", and it does | Trivial choice; don't spend time on it |
+| Q7 | Default branch | **`main`**: first `master` (the local repo already existed on it), renamed to `main` by the owner on 2026-10-24 | Trivial choice; don't spend time on it |
 | Q8 | Baseline sizing | **6% / normal** for the rule-based baselines, **plus one extra variant** (M7) | Fixes a fairness gap in the evaluation |
 | Q8a | Which extra variant? | **Bull Pit (fixed sizing):** Bull Pit's own buy / no-trade decisions, with every buy sized at the baselines' 6% / normal ([M7](#m7--evaluation-and-baselines)) | Without it, Bull Pit differs from the baselines in two ways at once (decisions *and* sizing), so a result can't say which one helped. It reuses Bull Pit's decisions, so it costs no quota |
 | Q9 | LLM models | **`openai/gpt-oss-20b` (small) + `openai/gpt-oss-120b` (large), pinned** (D9) | Both free on Groq; published June 2024 cutoff, so the backtest window starts 2024-07-01 or later |
